@@ -1,9 +1,33 @@
-﻿[project]
+[project]
 name = "spec-agent"
 version = "0.1.0"
-description = "TODO"
+description = "设计规范审查 agent：对照设计规范知识库，输出逐条合规判定、引用出处与修改建议"
+readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.40",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# Week 2 接入真实检索时再装
+rag = [
+    "chromadb>=0.5",
+    "rank-bm25>=0.2.2",
+]
+# Week 3 迁移到状态图时再装
+graph = [
+    "langgraph>=0.2",
+]
+
+[project.scripts]
+spec-agent = "cli:main"
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["cli"]
+packages = ["src"]

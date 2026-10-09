@@ -1,10 +1,26 @@
+# --- 密钥：绝对不能提交 ---
 .env
 .env.*
 !.env.example
+
+# --- Python ---
 .venv/
+venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# --- 运行产物 ---
+out/
 .chroma/
 *.sqlite
 eval/*.jsonl
+
+# --- 编辑器 / 系统 ---
+.idea/
+.vscode/
 .DS_Store
+Thumbs.db
