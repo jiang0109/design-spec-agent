@@ -70,8 +70,26 @@ class AgentReport(BaseModel):
 
     doc: str = Field(description="被审查文档的文件名")
     report: SpecReport = Field(description="模型生成的结构化报告")
-    steps: int = Field(default=0, description="agent 循环实际执行的步数")
+    steps: int = Field(default=0, description="模型轮次数（含工具调用轮与收尾轮）")
     tool_calls: int = Field(default=0, description="工具被调用的总次数")
     prompt_tokens: int = Field(default=0, description="累计输入 token")
     completion_tokens: int = Field(default=0, description="累计输出 token")
     elapsed_sec: float = Field(default=0.0, description="总耗时（秒）")
+    provenance_drift: list[str] = Field(
+        default_factory=list,
+        description=(
+            "溯源漂移：evidence_sections 里出现、但本次检索从未返回过的 section。"
+            "非空说明模型改写了出处标签，引用链会断。"
+        ),
+    )
+    provenance_checked: bool = Field(
+        default=True,
+        description=(
+            "溯源检测本身是否可信。为 False 时 provenance_drift 不代表真实情况 —— "
+            "指标不可信时必须显式暴露，而不是静默返回一个假结果。"
+        ),
+    )
+    budget_exhausted: bool = Field(
+        default=False,
+        description="是否因为触达工具调用总预算而被迫中断检索",
+    )

@@ -35,8 +35,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="设计规范审查 agent（Week 1：手写 ReAct 循环）")
     parser.add_argument("doc", nargs="?", help="要审查的文档路径（.md / .txt）")
     parser.add_argument("-o", "--out", default="out", help="输出目录，默认 out/")
-    parser.add_argument("--max-steps", type=int, default=6, help="工具循环最大步数，默认 6")
+    parser.add_argument("--max-steps", type=int, default=6, help="工具循环最大轮次，默认 6")
+    parser.add_argument(
+        "--tool-calls",
+        type=int,
+        default=12,
+        help="工具调用总预算，默认 12（比 --max-steps 更真实的成本护栏）",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="打印每一步中间过程")
+    parser.add_argument(
+        "--loose-prompt",
+        action="store_true",
+        help="对照实验用：使用修复前的宽松溯源表述（默认使用加严版本）",
+    )
     parser.add_argument("--ping", action="store_true", help="只测试 API 连通性后退出")
     args = parser.parse_args()
 
@@ -66,7 +77,14 @@ def main() -> int:
     print("-" * 56)
 
     try:
-        ar = run_agent(doc_text, doc_name=doc_path.name, max_steps=args.max_steps, verbose=args.verbose)
+        ar = run_agent(
+            doc_text,
+            doc_name=doc_path.name,
+            max_steps=args.max_steps,
+            max_tool_calls=args.tool_calls,
+            loose_instruction=args.loose_prompt,
+            verbose=args.verbose,
+        )
     except Exception as e:  # noqa: BLE001
         print(f"\n运行失败：{type(e).__name__}: {e}", file=sys.stderr)
         return 1
