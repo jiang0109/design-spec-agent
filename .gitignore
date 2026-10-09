@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.chroma/
+*.sqlite
+eval/*.jsonl
+.DS_Store
