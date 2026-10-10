@@ -184,11 +184,11 @@
     },
     {
       "id": "Q23",
-      "q": "图标按钮组件的命名和属性有什么要求",
+      "q": "图标按钮组件必须声明哪些属性",
       "gold_section": "COMP-001",
       "layer": "confusable",
       "answerable": true,
-      "comment": "⚠️ 多人称题：NAME-002 也讲 IconButton 命名。gold 定为 COMP-001（必须声明 size 与 variant）。此题同时检验能否返回多条规则"
+      "comment": "⚠️ 多人称题：NAME-002 讲 IconButton 命名、CASE-010 是同类违规案例，但问的是属性声明。原题为「命名和属性有什么要求」同时问两件事却只有一个 gold，属坏题，已收窄为只问属性"
     },
     {
       "id": "Q24",
@@ -279,11 +279,11 @@
     },
     {
       "id": "Q35",
-      "q": "画出稿待改的图层在画板上该怎么命名",
+      "q": "主按钮禁用状态那一层该怎么命名",
       "gold_section": "NAME-001",
       "layer": "confusable",
       "answerable": true,
-      "comment": "⚠️ NAME-001（图层命名格式 组件名/修饰/状态）与 NAME-002（组件名 PascalCase）都讲命名，适用对象不同"
+      "comment": "⚠️ NAME-001（图层命名格式 组件名/修饰/状态，例 Button/Primary/Disabled）与 NAME-002（组件名 PascalCase）都讲命名，适用对象不同。原题为「画出稿待改的图层怎么命名」，与 NAME-001 的规则内容不对应（模型判分指出「未涉及稿待改图层命名」），属坏题，已改为直接指向「修饰/状态」格式"
     }
   ]
 }

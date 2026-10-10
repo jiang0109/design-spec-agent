@@ -18,6 +18,8 @@ out/
 .chroma/
 *.sqlite
 eval/*.jsonl
+# 评测缓存：LLM 打分结果，可用 --no-cache 随时重建，不入库
+eval/.cache/
 
 # --- 编辑器 / 系统 ---
 .idea/
