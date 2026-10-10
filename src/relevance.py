@@ -59,16 +59,104 @@ class Relevance:
     bm25_rank: int
 
 
-def score_relevance(question: str, chunk: Chunk, temperature: float = 0.0) -> tuple[int, str]:
-    """对单个 (问题, chunk) 打分，返回 (0-3, 理由)。"""
-    user = (
-        f"【问题】\n{question}\n\n"
-        f"【资料出处】{chunk.section_title}（{chunk.section_id}）\n"
-        f"【资料内容】\n{chunk.content}"
-    )
+# ======================================================================
+# v2 提示词：把结构化字段（适用条件 / 例外）显式交给判定器
+#
+# 为什么需要它
+# ------------
+# v1 只看 chunk 正文，而正文里**没有例外条款**。实测 TYPO-002 的例外是
+# 「单行文本（按钮标签、徽标、表格单元格）不参与行高倍数校验」——
+# 也就是说"表格行高 1.6 倍"的正确答案本来就能**查表得到**，
+# 不需要任何模糊的边界判断。但 v1 看不到这张表，只能凭正文措辞猜，
+# 于是把"表格行高"判成 relevance=1，造成端到端回归（见 e2e_report.md）。
+#
+# 关键设计：不是"教模型宽容"，而是给它一个**明确的判据**。
+# 判据来自规则自身：例外列表里点出了问题对象 → 该对象被排除 → 判低分。
+# 这样既保住拒答（无覆盖对象不在任何例外里），又修掉误拒。
+# ======================================================================
+RELEVANCE_SYSTEM_V2 = """你是检索结果的相关性评审员。判断给定资料能否回答用户的问题。
+
+资料包含两部分：正文，以及【结构化字段】里的「适用」与「例外」。
+「例外」是这条规则**明确排除的对象**，请优先读它。
+
+按 0-3 打分，只输出 JSON：
+{"score": <整数>, "reason": "<20字以内>"}
+
+评分标准：
+3 = 资料直接给出了问题的答案（含明确取值、规则或结论）
+2 = 资料的规则适用于问题所指的对象（含规则范围更宽、覆盖了该对象的情形）
+1 = 资料提到了同一主题/术语，但规则并不适用于问题所指的对象
+0 = 资料与问题无关
+
+判定步骤（按顺序执行）：
+第一步 查「例外」：如果问题所指的对象出现在例外列表里，
+       说明该规则**明确不适用**，判 1。
+       例：问题问"表格单元格的行高"，而例外写着
+       "单行文本（按钮标签、徽标、表格单元格）不参与行高倍数校验"
+       → 表格单元格被明确排除 → 判 1。
+第二步 查「适用」：如果问题所指的对象符合适用条件，或属于规则所述的
+       更宽泛类别，则规则适用，判 2 或 3。
+       例：问题问"图标按钮组件必须声明哪些属性"，而适用写着
+       "组件被登记进设计系统的组件库" → 图标按钮属于组件 → 判 2。
+第三步 若「例外」与「适用」都没提到问题对象，再看正文：
+       规则的对象与问题对象是否同类？
+       同类但范围更宽 → 判 2；不同对象 → 判 1。
+
+要点：**不要因为"正文措辞与问题不完全对应"就判 1。**
+只有当规则明确排除该对象、或规则讲的是另一个对象时，才判 1。"""
+
+
+_STRUCT_MARK = "--- 结构化参数 ---"
+
+
+def structured_context(chunk: Chunk) -> str:
+    """提取 chunk 里的「适用 / 例外」字段，供 v2 判定使用。
+
+    ⚠️ 注意架构前提：结构化参数目前只挂在每个 Section 的第一个子块上，
+    实测 72 个 chunk 里有 49 个不含该字段 —— 也就是说判定器在多数情况下
+    **根本看不到例外条款**。这是 e2e 回归的架构层面原因，
+    由 chunk_heading_split 的 repeat_params 控制（现已默认每个子块都带）。
+    """
+    if _STRUCT_MARK not in chunk.content:
+        return ""
+    tail = chunk.content.split(_STRUCT_MARK, 1)[1]
+    lines = [ln.strip() for ln in tail.splitlines() if ln.strip()]
+    keep = [ln for ln in lines if ln.startswith(("适用:", "例外:"))]
+    return "\n".join(keep)
+
+
+def score_relevance(
+    question: str,
+    chunk: Chunk,
+    temperature: float = 0.0,
+    version: int = 1,
+) -> tuple[int, str]:
+    """对单个 (问题, chunk) 打分，返回 (0-3, 理由)。
+
+    version=1 → 只看正文（基线，用于对照）
+    version=2 → 额外提供「适用 / 例外」结构字段
+    """
+    if version == 2:
+        system = RELEVANCE_SYSTEM_V2
+        struct = structured_context(chunk)
+        struct_block = f"\n【结构化字段】\n{struct}\n" if struct else "\n【结构化字段】\n（无）\n"
+        user = (
+            f"【问题】\n{question}\n\n"
+            f"【资料出处】{chunk.section_title}（{chunk.section_id}）\n"
+            f"【资料内容】\n{chunk.content}\n"
+            f"{struct_block}"
+        )
+    else:
+        system = RELEVANCE_SYSTEM
+        user = (
+            f"【问题】\n{question}\n\n"
+            f"【资料出处】{chunk.section_title}（{chunk.section_id}）\n"
+            f"【资料内容】\n{chunk.content}"
+        )
+
     result = ask_llm(
         [
-            {"role": "system", "content": RELEVANCE_SYSTEM},
+            {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
         temperature=temperature,
@@ -93,6 +181,7 @@ def rerank(
     candidates: list,
     top_k: int = 5,
     min_score: int = 2,
+    version: int = 1,
     verbose: bool = False,
 ) -> list[Relevance]:
     """对候选 chunk 做相关性打分并重排。
@@ -102,7 +191,7 @@ def rerank(
     """
     scored: list[Relevance] = []
     for c in candidates[:top_k]:
-        score, reason = score_relevance(question, c.chunk)
+        score, reason = score_relevance(question, c.chunk, version=version)
         if verbose:
             print(f"    [{score}] {c.chunk.section_id}  {reason}")
         if score < 0:  # 解析失败：保留 BM25 次序，给中性分

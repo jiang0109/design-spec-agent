@@ -423,6 +423,7 @@ def chunk_heading_split(
     sections: list[Section],
     max_chars: int = 500,
     compact: bool = True,
+    repeat_params: bool = True,
 ) -> list[Chunk]:
     """在 `##` 切分基础上，对超出 max_chars 的节按粗体标签/段落二次切分。
 
@@ -432,9 +433,15 @@ def chunk_heading_split(
        `**正例**` `**反例**` `**经验。**` 这类粗体标签 —— 它们是作者标注的语义分段点。
     2. **每个子块重复标题头**（`【文档 / 规则名 / ID】`），保证任何子块单独被检索到
        时，出处依然明确、可溯源。
-    3. **结构化参数只挂在第一个子块**，避免每块重复 ~400 字符。
-       代价：若第一个子块未被召回，精确取值拿不到 —— 这是引入变体 A/B 要测的权衡。
-    4. 整体不超过 max_chars 的节不切分（当前 38 节里大多数属于此类）。
+    3. `repeat_params=True`（默认）时**每个子块都带结构化参数**。
+       早期版本为了省字符只挂在第一个子块上，结果是：
+       72 个 chunk 里 49 个没有「例外」字段 —— 而判定器只看到被召回的 chunk，
+       于是**例外条款在多数情况下根本不可见**。
+       实测后果：TYPO-002 的例外明确写着"表格单元格不参与行高倍数校验"，
+       但判定器看不到它，只能凭正文措辞猜，把"表格行高"误判为不适用，
+       造成端到端功能回归（见 eval/e2e_report.md）。
+       **省下的那点字符，代价是关键约束不可见 —— 不划算。**
+    4. 整体不超过 max_chars 的节不切分。
 
     compact=True 用 `compact_params()` 精简参数；False 则附完整 front-matter 块。
     """
@@ -473,8 +480,8 @@ def chunk_heading_split(
 
         for gi, group in enumerate(groups):
             content = f"{sec.header()}\n" + "\n\n".join(group)
-            # 参数只挂第一个子块
-            if gi == 0 and params_text:
+            # 结构字段：默认每个子块都带（保证关键约束始终可见）
+            if params_text and (repeat_params or gi == 0):
                 content += f"\n\n--- 结构化参数 ---\n{params_text}"
             chunks.append(
                 Chunk(
