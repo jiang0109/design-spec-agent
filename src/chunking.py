@@ -330,18 +330,179 @@ def chunk_semantic(
     return chunks
 
 
+def _fm_list_items(block: str, field: str) -> list[str]:
+    """从一个 YAML 片段里提取某字段下的 `- value` 列表项。
+
+    纯行扫描：只在「字段名所在行」之后、遇到同级新字段之前收集 `- ` 行。
+    不依赖 YAML 库（项目环境无 PyYAML，且这三个字段结构固定）。
+    """
+    lines = block.splitlines()
+    out: list[str] = []
+    start = None
+    base_indent = 0
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\s*)" + re.escape(field) + r":\s*$", line)
+        if m:
+            start = i + 1
+            base_indent = len(m.group(1))
+            break
+    if start is None:
+        return []
+    for line in lines[start:]:
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        # 同级或更浅的非列表行 = 字段结束
+        if indent <= base_indent and not line.lstrip().startswith("-"):
+            break
+        m_item = re.match(r"^\s*-\s*(.+?)\s*$", line)
+        if m_item:
+            out.append(m_item.group(1))
+    return out
+
+
+def compact_params(fm_block: str) -> str:
+    """把结构化参数压成精简形式。
+
+    为什么需要它（本轮实测数据）
+    ---------------------------
+    原始 front-matter 块平均 **598 字符**，而正文平均只有 **395 字符**。
+    38 节的 heading chunk 总字符拆解：结构化参数 **58%**、正文 39%、标题头 3%。
+
+    也就是说：**chunk 之所以"太大"，主因不是正文长，而是结构化参数块过大。**
+    进一步看，这个块里 statement / rationale / positive_case / negative_case
+    四项在正文里**已经完整重复了一遍**（正文本来就是按这四项行文的）。
+
+    所以只保留正文没有的信息：params（精确取值）、applies_when（适用条件）、
+    exceptions（例外）。这三项正是"正文讲不清、但判定必须精确"的部分。
+    """
+    parts: list[str] = []
+
+    # params：逐行收集（含子键），它是精确校验的唯一来源
+    lines = fm_block.splitlines()
+    start = None
+    base_indent = 0
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\s*)params:\s*$", line)
+        if m:
+            start = i + 1
+            base_indent = len(m.group(1))
+            break
+    if start is not None:
+        body: list[str] = []
+        for line in lines[start:]:
+            if not line.strip():
+                continue
+            indent = len(line) - len(line.lstrip())
+            if indent <= base_indent and not line.lstrip().startswith("-"):
+                break
+            body.append(line.strip())
+        if body:
+            parts.append("params: " + " | ".join(body))
+
+    for field, label in (("applies_when", "适用"), ("exceptions", "例外")):
+        items = _fm_list_items(fm_block, field)
+        if items:
+            parts.append(f"{label}: " + "; ".join(items))
+
+    return "\n".join(parts)
+
+
+def _split_by_label(text: str) -> list[str]:
+    """按 `**粗体标签。**` 切成语义单元；没有标签时退回按空行切。"""
+    if "**" in text:
+        pieces = re.split(r"(?=\*\*[^*]+\*\*)", text)
+        return [p.strip() for p in pieces if p.strip()]
+    return [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+
+
+# ======================================================================
+# 策略 D：标题切分 + 超长节二次切分（针对 heading 粒度过粗的问题）
+# ======================================================================
+def chunk_heading_split(
+    sections: list[Section],
+    max_chars: int = 500,
+    compact: bool = True,
+) -> list[Chunk]:
+    """在 `##` 切分基础上，对超出 max_chars 的节按粗体标签/段落二次切分。
+
+    设计要点
+    --------
+    1. **沿语义边界切**，不按字符数硬切。锚点是 `**为什么这么规定。**`
+       `**正例**` `**反例**` `**经验。**` 这类粗体标签 —— 它们是作者标注的语义分段点。
+    2. **每个子块重复标题头**（`【文档 / 规则名 / ID】`），保证任何子块单独被检索到
+       时，出处依然明确、可溯源。
+    3. **结构化参数只挂在第一个子块**，避免每块重复 ~400 字符。
+       代价：若第一个子块未被召回，精确取值拿不到 —— 这是引入变体 A/B 要测的权衡。
+    4. 整体不超过 max_chars 的节不切分（当前 38 节里大多数属于此类）。
+
+    compact=True 用 `compact_params()` 精简参数；False 则附完整 front-matter 块。
+    """
+    chunks: list[Chunk] = []
+
+    for sec in sections:
+        params_text = ""
+        if sec.fm_block:
+            params_text = (
+                compact_params(sec.fm_block) if compact else sec.fm_block
+            )
+
+        units = _split_by_label(sec.prose)
+        groups: list[list[str]] = []
+        buf: list[str] = []
+        buf_len = 0
+
+        for unit in units:
+            # 单个单元就超限：自成一组
+            if len(unit) > max_chars:
+                if buf:
+                    groups.append(buf)
+                    buf, buf_len = [], 0
+                groups.append([unit])
+                continue
+            if buf_len + len(unit) > max_chars and buf:
+                groups.append(buf)
+                buf, buf_len = [], 0
+            buf.append(unit)
+            buf_len += len(unit) + 1
+        if buf:
+            groups.append(buf)
+
+        if not groups:
+            continue
+
+        for gi, group in enumerate(groups):
+            content = f"{sec.header()}\n" + "\n\n".join(group)
+            # 参数只挂第一个子块
+            if gi == 0 and params_text:
+                content += f"\n\n--- 结构化参数 ---\n{params_text}"
+            chunks.append(
+                Chunk(
+                    chunk_id=f"heading_split:{sec.section_id}:{gi}",
+                    doc_id=sec.doc_id,
+                    section_id=sec.section_id,
+                    section_title=sec.section_title,
+                    content=content,
+                    strategy="heading_split",
+                )
+            )
+
+    return chunks
+
+
 STRATEGIES = {
     "fixed": chunk_fixed,
     "heading": chunk_heading,
+    "heading_split": chunk_heading_split,
     "semantic": chunk_semantic,
 }
 
 
-def build_chunks(strategy: str, sections: list[Section] | None = None) -> list[Chunk]:
+def build_chunks(strategy: str, sections: list[Section] | None = None, **kw) -> list[Chunk]:
     if strategy not in STRATEGIES:
         raise ValueError(f"未知策略 {strategy}，可选：{list(STRATEGIES)}")
     secs = sections if sections is not None else load_sections()
-    return STRATEGIES[strategy](secs)
+    return STRATEGIES[strategy](secs, **kw)
 
 
 # ======================================================================
