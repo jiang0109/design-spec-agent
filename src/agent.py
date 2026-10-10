@@ -22,7 +22,7 @@ from pydantic import ValidationError
 
 from .llm import ask_llm
 from .schemas import AgentReport, SpecReport
-from .tools import TOOL_IMPLS, TOOLS_SCHEMA
+from .tools import TOOL_IMPLS, active_schema, dispatch_tool
 
 # 防死循环 + 防烧钱的最低要求：
 #   max_steps     限制"轮次" —— 模型每轮都可能发起多个并行工具调用
@@ -74,6 +74,7 @@ def run_tool_loop(
     doc: str,
     max_steps: int = MAX_STEPS,
     max_tool_calls: int = MAX_TOOL_CALLS,
+    llm_verify: bool = False,
     verbose: bool = True,
 ) -> tuple[str, list[dict], dict]:
     """返回 (模型最终文本, 完整消息历史, 用量统计)。
@@ -82,7 +83,15 @@ def run_tool_loop(
       外层 max_steps      —— 限制轮次，防"反复查同一条"的死循环
       内层 max_tool_calls —— 限制调用总数，防"一轮并发几十个调用"的费用失控
     两者都不能少：实测 max_steps=1 时模型仍在单轮里发出 6 个调用。
+
+    llm_verify=True 时启用 LLM 相关性闸门（检索层可拒答），
+    否则走纯 BM25 —— 两者的唯一差异就是这个开关，便于对照实验。
     """
+    # 开关是模块级状态，供 dispatch_tool 读取
+    import src.tools as _tools
+
+    _tools.VERIFY_ENABLED = llm_verify
+
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"请审查下面这份设计文档：\n\n<document>\n{doc}\n</document>"},
@@ -91,7 +100,7 @@ def run_tool_loop(
     budget_exhausted = False
 
     for step in range(1, max_steps + 1):
-        result = ask_llm(messages, tools=TOOLS_SCHEMA, temperature=0.2)
+        result = ask_llm(messages, tools=active_schema(llm_verify), temperature=0.2)
         _usage_add(usage, result)
         msg = result.message
 
@@ -140,11 +149,15 @@ def run_tool_loop(
                 continue
 
             try:
-                fn = TOOL_IMPLS.get(name)
-                if fn is None:
-                    payload = f"不存在名为 {name} 的工具。可用工具：{list(TOOL_IMPLS)}"
+                if name != "search_spec_verified" and name not in TOOL_IMPLS:
+                    payload = f"不存在名为 {name} 的工具。"
                 else:
-                    payload = fn(**args)
+                    out = dispatch_tool(name, args)
+                    payload = (
+                        out
+                        if out is not None
+                        else f"不存在名为 {name} 的工具。"
+                    )
             except TypeError as e:
                 payload = f"参数不符合工具签名：{e}"
             except Exception as e:  # noqa: BLE001 —— 故意兜住所有工具异常，避免整程序崩溃
@@ -312,11 +325,16 @@ def run_agent(
     max_tool_calls: int = MAX_TOOL_CALLS,
     max_report_attempts: int = MAX_REPORT_ATTEMPTS,
     loose_instruction: bool = False,
-    verbose: bool = True,
+    llm_verify: bool = False,
+    verbose: bool = False,
 ) -> AgentReport:
     started = time.perf_counter()
     _, messages, usage = run_tool_loop(
-        doc, max_steps=max_steps, max_tool_calls=max_tool_calls, verbose=verbose
+        doc,
+        max_steps=max_steps,
+        max_tool_calls=max_tool_calls,
+        llm_verify=llm_verify,
+        verbose=verbose,
     )
     report, usage = build_report(
         messages,
