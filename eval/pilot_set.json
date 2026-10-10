@@ -1,0 +1,91 @@
+{
+  "_note": "Pilot 评测集：用于判断当前知识库规模是否足以区分分块策略。",
+  "_design": [
+    "10 道题全部可在现有 38 条知识库中回答（gold 必须存在）。",
+    "刻意加入「同一术语跨文档」的题：如 attr-name 同时涉及 component.md 与 naming.md，",
+    "这是真实检索中最容易混淆的场景，也是能区分策略的地方。",
+    "用 phrasing 标注提问措辞与规范原文的语义距离，用于分析失败原因。"
+  ],
+  "questions": [
+    {
+      "id": "Q01",
+      "q": "卡片里面留白应该用几个像素？",
+      "gold_section": "SPACING-001",
+      "gold_doc": "spacing",
+      "phrasing": "colloquial",
+      "comment": "用「留白」问「内边距」，偏口语，考同义改写下的召回"
+    },
+    {
+      "id": "Q02",
+      "q": "卡片内边距允许哪几档取值",
+      "gold_section": "SPACING-001",
+      "gold_doc": "spacing",
+      "phrasing": "literal",
+      "comment": "与规范原文措辞几乎一致，应当轻松命中（下限校验题）"
+    },
+    {
+      "id": "Q03",
+      "q": "卡片之间的间隙可以用 20px 吗",
+      "gold_section": "SPACING-002",
+      "gold_doc": "spacing",
+      "phrasing": "value",
+      "comment": "以具体值提问，需要命中 SPACING-002 的 allowed 列表"
+    },
+    {
+      "id": "Q04",
+      "q": "正文文字和背景的颜色差异最低要达到多少",
+      "gold_section": "COLOR-001",
+      "gold_doc": "color",
+      "phrasing": "paraphrase",
+      "comment": "用「颜色差异」问「对比度」，考术语改写"
+    },
+    {
+      "id": "Q05",
+      "q": "深色模式下文字可访问性的对比度标准是多少",
+      "gold_section": "COLOR-001",
+      "gold_doc": "color",
+      "phrasing": "context",
+      "comment": "加入「深色模式」「可访问性」等原文没有的词，考抗干扰能力"
+    },
+    {
+      "id": "Q06",
+      "q": "写内边距的时候直接填 #3B82F6 这种色值可以吗",
+      "gold_section": "COLOR-003",
+      "gold_doc": "color",
+      "phrasing": "value",
+      "comment": "具体色值提问，考是否能定位到「禁止直接引用色值变量」"
+    },
+    {
+      "id": "Q07",
+      "q": "描述文字的字号是多少",
+      "gold_section": "TYPO-004",
+      "gold_doc": "typography",
+      "phrasing": "colloquial",
+      "comment": "用「描述文字」问「正文默认字号」，口语化改写"
+    },
+    {
+      "id": "Q08",
+      "q": "属性名用 is-loading 这种连字符写法行不行",
+      "gold_section": "COMP-002",
+      "gold_doc": "component",
+      "phrasing": "confusable",
+      "comment": "⚠️ 易混题：COMP-002（属性命名 camelCase）与 NAME-004（令牌用 kebab-case）都用连字符话题"
+    },
+    {
+      "id": "Q09",
+      "q": "画板里的图层被自动命名成 Frame 123 要不要改",
+      "gold_section": "NAME-003",
+      "gold_doc": "naming",
+      "phrasing": "literal",
+      "comment": "原文直接包含 Frame 123，应当轻松命中"
+    },
+    {
+      "id": "Q10",
+      "q": "字号改小以后行高要不要跟着调",
+      "gold_section": "TYPO-002",
+      "gold_doc": "typography",
+      "phrasing": "paraphrase",
+      "comment": "用问答式提问，考是否能命中「行高为字号的 1.5 倍」"
+    }
+  ]
+}
