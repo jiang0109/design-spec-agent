@@ -1,0 +1,289 @@
+{
+  "_note": "正式检索评测集。替代 pilot_set.json（10 题，区分力已耗尽），并修复其坏题 Q12。",
+  "_design": [
+    "30 题，按 6 类难度分层，逐个覆盖 23 条规则中的 20 条。",
+    "answerable=false 的 3 题刻意设计为知识库无覆盖，用于检验检索器能否正确拒答 ——",
+    "  这是 Week 1 反幻觉验证在检索层的对应物：能召回到「看起来相关」的东西，",
+    "  不代表该东西能回答问题。检索器必须能表达「我没找到」。",
+    "所有题目本身不得成为坏题：问句必须与 gold 有可追溯的语义联系，",
+    "  否则会像 pilot 的 Q12 那样，任何配置都失败，污染结论。"
+  ],
+  "layers": {
+    "literal": "措辞与规范原文高度一致 —— 下限校验，错则说明链路坏了",
+    "value": "以具体数值/取值提问 —— 考能否定位到 allowed/range 等结构化取值",
+    "colloquial": "口语化提问，不含专业术语 —— 考同义改写能力",
+    "paraphrase": "改写术语但保留专业性 —— 考语义距离",
+    "context": "加入原文没有的干扰词 —— 考抗干扰",
+    "confusable": "⚠️ 同一术语跨文档，或需区分近似规则 —— 最能区分策略的一类",
+    "no_answer": "知识库无覆盖 —— 考拒答能力（不计入召回率，单独统计）"
+  },
+  "questions": [
+    {
+      "id": "Q01",
+      "q": "卡片内边距允许哪几档取值",
+      "gold_section": "SPACING-001",
+      "layer": "literal",
+      "answerable": true
+    },
+    {
+      "id": "Q02",
+      "q": "字号允许使用哪几档",
+      "gold_section": "TYPO-001",
+      "layer": "literal",
+      "answerable": true
+    },
+    {
+      "id": "Q03",
+      "q": "正文文字和背景的颜色差异最低要达到多少",
+      "gold_section": "COLOR-001",
+      "layer": "literal",
+      "answerable": true,
+      "comment": "用「颜色差异」指「对比度」，但「正文」二字与原文一致，仍属 literal"
+    },
+    {
+      "id": "Q04",
+      "q": "布尔类型的属性应该以什么开头命名",
+      "gold_section": "COMP-003",
+      "layer": "literal",
+      "answerable": true
+    },
+    {
+      "id": "Q05",
+      "q": "卡片之间的间距可以用 20px 吗",
+      "gold_section": "SPACING-002",
+      "layer": "value",
+      "answerable": true
+    },
+    {
+      "id": "Q06",
+      "q": "行高相对字号应该是几倍",
+      "gold_section": "TYPO-002",
+      "layer": "value",
+      "answerable": true
+    },
+    {
+      "id": "Q07",
+      "q": "页面内容区最大宽度不能超过多少",
+      "gold_section": "SPACING-004",
+      "layer": "value",
+      "answerable": true
+    },
+    {
+      "id": "Q08",
+      "q": "正文文字对比度只要达到 3:1 就可以了吗",
+      "gold_section": "COLOR-001",
+      "layer": "value",
+      "answerable": true,
+      "comment": "以 3:1 这个「大号文字」的阈值反问正文标准，考能否区分 COLOR-001 与 COLOR-002"
+    },
+    {
+      "id": "Q09",
+      "q": "卡片内部内容和边框之间的距离留几个像素",
+      "gold_section": "SPACING-001",
+      "layer": "colloquial",
+      "answerable": true,
+      "comment": "不用「内边距」这个词，考同义改写"
+    },
+    {
+      "id": "Q10",
+      "q": "列表里的卡片挨得太近了，它们之间该留多少空隙",
+      "gold_section": "SPACING-002",
+      "layer": "colloquial",
+      "answerable": true
+    },
+    {
+      "id": "Q11",
+      "q": "标题和正文的字号差多少比较合适",
+      "gold_section": "TYPO-001",
+      "layer": "colloquial",
+      "answerable": true
+    },
+    {
+      "id": "Q12",
+      "q": "描述文字的字号是多少",
+      "gold_section": "TYPO-004",
+      "layer": "colloquial",
+      "answerable": true,
+      "comment": "用「描述文字」指「正文」，原文写的是「正文默认字号」"
+    },
+    {
+      "id": "Q13",
+      "q": "危险操作按钮的颜色应该怎么指定",
+      "gold_section": "COLOR-004",
+      "layer": "paraphrase",
+      "answerable": true
+    },
+    {
+      "id": "Q14",
+      "q": "按钮上的文字色值要不要走语义化那一层",
+      "gold_section": "COLOR-003",
+      "layer": "paraphrase",
+      "answerable": true
+    },
+    {
+      "id": "Q15",
+      "q": "表格工具栏里图标和文字之间用 6px 可以吗",
+      "gold_section": "SPACING-005",
+      "layer": "paraphrase",
+      "answerable": true,
+      "comment": "问的是组件内部元素间距，6px 不是 4 的倍数"
+    },
+    {
+      "id": "Q16",
+      "q": "设计稿里标题字重用 700 可以吗",
+      "gold_section": "TYPO-003",
+      "layer": "paraphrase",
+      "answerable": true
+    },
+    {
+      "id": "Q17",
+      "q": "深色模式下文字可访问性的对比度标准是多少",
+      "gold_section": "COLOR-001",
+      "layer": "context",
+      "answerable": true,
+      "comment": "「深色模式」「可访问性」原文都没有，考抗干扰"
+    },
+    {
+      "id": "Q18",
+      "q": "列表页移动端屏幕上页面左右留白多少",
+      "gold_section": "SPACING-004",
+      "layer": "context",
+      "answerable": true,
+      "comment": "「列表页」「移动端」「屏幕」都是干扰词，窄屏标准是 16"
+    },
+    {
+      "id": "Q19",
+      "q": "新建的图层自动叫 Frame 123，需要处理吗",
+      "gold_section": "NAME-003",
+      "layer": "context",
+      "answerable": true
+    },
+    {
+      "id": "Q20",
+      "q": "属性名用 is-loading 这种连字符写法行不行",
+      "gold_section": "COMP-002",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️「属性名」指向 COMP-002（camelCase），但 NAME-004（设计令牌）要求 kebab-case，术语冲突"
+    },
+    {
+      "id": "Q21",
+      "q": "主按钮背景直接写 blue-500 可以吗",
+      "gold_section": "COLOR-003",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ 与「硬编码色值」同类但不同规则；考能否区分 COLOR-003 与 COLOR-004"
+    },
+    {
+      "id": "Q22",
+      "q": "列表里的卡片和分组之间都用 16px 间距可以吗",
+      "gold_section": "SPACING-003",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ SPACING-002 管取值（16 或 24），SPACING-003 管组间必须严格大于组内 —— 需要区分"
+    },
+    {
+      "id": "Q23",
+      "q": "图标按钮组件的命名和属性有什么要求",
+      "gold_section": "COMP-001",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ 多人称题：NAME-002 也讲 IconButton 命名。gold 定为 COMP-001（必须声明 size 与 variant）。此题同时检验能否返回多条规则"
+    },
+    {
+      "id": "Q24",
+      "q": "组件属性能不能叫 loading_text",
+      "gold_section": "COMP-002",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ 下划线写法：既违反命名格式，也涉及布尔前缀（loading 缺 is 前缀）"
+    },
+    {
+      "id": "Q25",
+      "q": "按钮提供了 variant 属性但没写默认值，能过吗",
+      "gold_section": "COMP-004",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ COMP-001 管「必须声明 size 与 variant」，COMP-004 管「必须有默认值」，此处问的是默认值"
+    },
+    {
+      "id": "Q26",
+      "q": "Token 命名用 colorTextPrimary 这种写法行不行",
+      "gold_section": "NAME-004",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ camelCase 在属性上是强制的（COMP-002），在令牌上是禁止的（NAME-004），方向相反"
+    },
+    {
+      "id": "Q27",
+      "q": "组件命名用 primary-button 这种写法可以吗",
+      "gold_section": "NAME-002",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ NAME-002 要求组件名 PascalCase，但 NAME-004 要求令牌 kebab-case —— 同一术语「命名」、两种相反规范"
+    },
+    {
+      "id": "Q28",
+      "q": "正文里已经用了 semibold，这个字重用对了吗",
+      "gold_section": "TYPO-003",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ TYPO-003 限定正文不低于 400 —— semibold(600) 合规，考能否区分允许范围"
+    },
+    {
+      "id": "Q29",
+      "q": "数据表格的行高用 1.6 倍可以吗",
+      "gold_section": "TYPO-002",
+      "layer": "context",
+      "answerable": true,
+      "comment": "「表格」在知识库中无专条，但 TYPO-002（行高 = 字号 1.5 倍）对全部文字生效，1.6 违规。考能否在未覆盖对象上仍应用通用规则"
+    },
+    {
+      "id": "Q30",
+      "q": "数据表格的行内边距可以用 8px 吗",
+      "gold_section": null,
+      "layer": "no_answer",
+      "answerable": false,
+      "comment": "知识库完全没有「表格行内边距」这个概念。SPACING-001 只管卡片、SPACING-005 只管组件内部元素间距，都不能覆盖它"
+    },
+    {
+      "id": "Q31",
+      "q": "深色模式下容器的颜色值怎么取",
+      "gold_section": null,
+      "layer": "no_answer",
+      "answerable": false,
+      "comment": "知识库有语义色规则，但没有深色模式主题的任何定义。对比 Q17：Q17 问的是对比度（COLOR-001 可答），本题问的是深色模式主题且对象是「容器」"
+    },
+    {
+      "id": "Q32",
+      "q": "大号文字和加粗文字的对比度门槛是多少",
+      "gold_section": "COLOR-002",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ COLOR-001（正文 4.5:1）与 COLOR-002（大号/加粗 3:1）阈值不同，需按字号与字重分流"
+    },
+    {
+      "id": "Q33",
+      "q": "产品推荐标签的底色能用 success 绿吗",
+      "gold_section": "COLOR-005",
+      "layer": "context",
+      "answerable": true,
+      "comment": "「推荐标签」是干扰对象，实质考状态色不得用于非状态语义场景"
+    },
+    {
+      "id": "Q34",
+      "q": "组件变体取值里能加一个 tertiary 吗",
+      "gold_section": "COMP-005",
+      "layer": "value",
+      "answerable": true
+    },
+    {
+      "id": "Q35",
+      "q": "画出稿待改的图层在画板上该怎么命名",
+      "gold_section": "NAME-001",
+      "layer": "confusable",
+      "answerable": true,
+      "comment": "⚠️ NAME-001（图层命名格式 组件名/修饰/状态）与 NAME-002（组件名 PascalCase）都讲命名，适用对象不同"
+    }
+  ]
+}
