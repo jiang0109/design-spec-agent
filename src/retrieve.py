@@ -54,6 +54,26 @@ class Scored:
     rank: int
 
 
+def split_fields(content: str) -> tuple[str, str, str]:
+    """把 chunk 拆成 (标题头, 所有小标题, 正文)。
+
+    chunk 结构是 `【文档 / 规则名 / ID】` + 正文，正文里可能还有 markdown 小标题。
+    标题类字段是高质量信号：规则名称本身就是这条规范最精炼的语义摘要，
+    "卡片内边距取值" 之于 query "卡片内边距允许哪几档"，匹配度远高于正文里的长句。
+    """
+    lines = content.splitlines()
+    header = lines[0] if lines and lines[0].startswith("【") else ""
+    headings: list[str] = []
+    body: list[str] = []
+    for line in lines[1:]:
+        s = line.strip()
+        if s.startswith("#"):
+            headings.append(s.lstrip("# ").strip())
+        else:
+            body.append(line)
+    return header, " ".join(headings), "\n".join(body)
+
+
 class BM25:
     """标准 BM25（k1=1.5, b=0.75），在 chunk 语料上建立索引。"""
 
@@ -81,19 +101,27 @@ class BM25:
             t: math.log(1 + (self.n - d + 0.5) / (d + 0.5)) for t, d in df.items()
         }
 
+    # ------------------------------------------------------------------
+    # 内部打分原语
+    # ------------------------------------------------------------------
+    def _score(self, q_tokens: list[str], tf: Counter, dl: int) -> float:
+        s = 0.0
+        for t in q_tokens:
+            f = tf.get(t)
+            if not f:
+                continue
+            idf = self.idf.get(t, 0.0)
+            s += idf * (f * (self.k1 + 1)) / (
+                f + self.k1 * (1 - self.b + self.b * dl / self.avg_len)
+            )
+        return s
+
     def search(self, query: str, top_k: int = 5) -> list[Scored]:
         q_tokens = tokenize(query)
         scores: list[tuple[float, int]] = []
 
         for i, tf in enumerate(self.docs):
-            s = 0.0
-            dl = self.lengths[i]
-            for t in q_tokens:
-                f = tf.get(t)
-                if not f:
-                    continue
-                idf = self.idf.get(t, 0.0)
-                s += idf * (f * (self.k1 + 1)) / (f + self.k1 * (1 - self.b + self.b * dl / self.avg_len))
+            s = self._score(q_tokens, tf, self.lengths[i])
             if s > 0:
                 scores.append((s, i))
 
@@ -101,4 +129,37 @@ class BM25:
         return [
             Scored(chunk=self.chunks[i], score=s, rank=r)
             for r, (s, i) in enumerate(scores[:top_k], 1)
+        ]
+
+    def search_field_weighted(
+        self, query: str, title_weight: float = 1.0, top_k: int = 5
+    ) -> list[Scored]:
+        """双字段加权：正文 BM25 + title_weight × 标题头/小标题 BM25。
+
+        title_weight = 0 时退化为普通 BM25，因此可以直接和 `search` 对比，
+        证明增益确实来自标题字段而不是实现差异。
+        """
+        q_tokens = tokenize(query)
+        pad = "。" * 40  # 固定长度填充，让标题字段的 dl 归一化保持稳定
+
+        scored: list[tuple[float, int]] = []
+        for i, c in enumerate(self.chunks):
+            header, headings, _ = split_fields(c.content)
+            title_text = f"{header} {headings}".strip()
+
+            s_body = self._score(q_tokens, self.docs[i], self.lengths[i])
+            if title_text:
+                t_toks = tokenize(title_text)
+                s_title = self._score(q_tokens, Counter(t_toks), len(t_toks) or 1)
+            else:
+                s_title = 0.0
+
+            s = s_body + title_weight * s_title
+            if s > 0:
+                scored.append((s, i))
+
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        return [
+            Scored(chunk=self.chunks[i], score=s, rank=r)
+            for r, (s, i) in enumerate(scored[:top_k], 1)
         ]

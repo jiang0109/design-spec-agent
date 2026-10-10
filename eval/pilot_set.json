@@ -9,11 +9,11 @@
   "questions": [
     {
       "id": "Q01",
-      "q": "卡片里面留白应该用几个像素？",
+      "q": "卡片内部内容和边框之间的距离留几个像素",
       "gold_section": "SPACING-001",
       "gold_doc": "spacing",
       "phrasing": "colloquial",
-      "comment": "用「留白」问「内边距」，偏口语，考同义改写下的召回"
+      "comment": "用「内容和边框之间的距离」问「内边距」，偏口语且无专业词。⚠️ 原题为「留白」已被替换：留白在 spacing/typography/component 三份规范里都指绝对留白，题目本身有歧义，属于坏题。"
     },
     {
       "id": "Q02",
@@ -86,6 +86,22 @@
       "gold_doc": "typography",
       "phrasing": "paraphrase",
       "comment": "用问答式提问，考是否能命中「行高为字号的 1.5 倍」"
+    },
+    {
+      "id": "Q11",
+      "q": "目录项允许用 300 这种很细的字重吗",
+      "gold_section": "TYPO-003",
+      "gold_doc": "typography",
+      "phrasing": "value",
+      "comment": "以具体字重值提问，考能否命中 TYPO-003 的字重白名单"
+    },
+    {
+      "id": "Q12",
+      "q": "按钮上的图标是图标按钮组件吗",
+      "gold_section": "COMP-001",
+      "gold_doc": "component",
+      "phrasing": "confusable",
+      "comment": "⚠️ 易混题：问的是「图标按钮」这个组件类型，但目标是 COMP-001（组件必须声明 size 与 variant）。NAME-002 也提到 IconButton，会形成干扰"
     }
   ]
 }
