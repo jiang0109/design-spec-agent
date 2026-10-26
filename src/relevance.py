@@ -176,6 +176,86 @@ def score_relevance(
     return max(0, min(3, score)), reason
 
 
+# ======================================================================
+# 拒绝原因分类：回答「为什么没有可用的规范」
+#
+# 为什么需要它
+# ------------
+# 端到端实验（eval/e2e_report.md）的回归根因不是检索层误拒，而是**工具措辞**：
+# 当时 `found=false` 一律对应「知识库没有覆盖该对象 → 必须判 uncertain」，
+# 于是生成层无法区分下面两件事：
+#
+#   1. 规则**明确排除**了该对象（例如 TYPO-002 的例外写着"表格单元格不参与
+#      行高倍数校验"）→ 该对象不受约束 → 这是**有结论**的，可判 pass
+#   2. 知识库**根本没有**覆盖该对象（例如深色模式主题）→ 无法判定 → 判 uncertain
+#
+# 两者在检索层都表现为「没有可返回的 chunk」，但生成层需要完全相反的行为。
+# 一个布尔值承载不了这个区分，所以必须把**原因**结构化地传下去。
+#
+# 为什么不用相关性分数推断原因
+# ----------------------------
+# `structured_report.md` 已证明这条路走不通：同一个语言模式「被明确排除」
+# 对应两种相反解读。原因判定是**另一个维度**，必须是独立的判定。
+# ======================================================================
+
+REJECT_REASON_SYSTEM = """你在判断「为什么资料不能回答问题」。看的是**原因**，不是相关性高低。
+
+只输出 JSON：
+{"reason": "<no_coverage|excluded|not_applicable>", "detail": "<20字内>"}
+
+三个取值：
+- excluded：资料所讲规则的**例外条款明确排除了**问题所指的对象。
+  例：问题问"表格单元格的行高"，资料是「行高=字号×1.5，例外：单行文本
+  （按钮标签、徽标、表格单元格）不参与行高倍数校验」
+  → 表格单元格被明确排除 → reason=excluded。
+  **注意：被排除意味着"该规则不约束它"，这本身就是一个结论。**
+- not_applicable：资料讲的是**另一个对象**的规则，未提及问题所指对象，且没有排除它。
+  例：问题问"表格行内边距"，资料讲「卡片内边距」→ reason=not_applicable。
+- no_coverage：资料只是沾到同一主题的边缘，或完全无关，谈不上适用与否。
+  例：问题问"深色模式容器颜色"，资料只是泛泛提到语义色 → reason=no_coverage。
+
+判断顺序：先看例外是否点出该对象（excluded）→ 再看是否在讲别的对象（not_applicable）
+→ 否则（no_coverage）。"""
+
+
+def classify_rejection(question: str, chunk: Chunk, temperature: float = 0.0) -> tuple[str, str]:
+    """判断某条资料为什么不能回答问题，返回 (reason, 说明)。
+
+    reason ∈ {no_coverage, excluded, not_applicable}
+    """
+    struct = structured_context(chunk)
+    struct_block = (
+        f"\n【该规则的适用与例外】\n{struct}\n" if struct else "\n【该规则的适用与例外】\n（无）\n"
+    )
+    user = (
+        f"【问题】\n{question}\n\n"
+        f"【资料出处】{chunk.section_title}（{chunk.section_id}）\n"
+        f"【资料内容】\n{chunk.content}\n"
+        f"{struct_block}"
+    )
+    result = ask_llm(
+        [
+            {"role": "system", "content": REJECT_REASON_SYSTEM},
+            {"role": "user", "content": user},
+        ],
+        temperature=temperature,
+        json_mode=True,
+    )
+    raw = (result.message.content or "").strip()
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if m:
+        raw = m.group(0)
+    try:
+        data = json.loads(raw)
+        reason = str(data.get("reason", "")).strip()
+        detail = str(data.get("detail", ""))[:50]
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return "no_coverage", f"解析失败: {raw[:40]}"
+    if reason not in ("no_coverage", "excluded", "not_applicable"):
+        return "no_coverage", f"未知原因({reason})"
+    return reason, detail
+
+
 def rerank(
     question: str,
     candidates: list,

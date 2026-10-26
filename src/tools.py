@@ -189,19 +189,27 @@ def search_spec_verified(
     min_relevance: int = 2,
     funnel: int = 10,
 ) -> str:
-    """BM25 粗排 + LLM 相关性闸门。
+    """BM25 粗排 + LLM 相关性闸门 + 拒绝原因分类。
 
-    只返回相关性分 >= min_relevance 的条目；一条都没有时明确告知"无覆盖"，
-    让 agent 能据此判 uncertain，而不是基于"看起来相关"的内容硬答。
+    返回值有三种形态，**生成层必须区别对待**：
+      1. found=true                → 有适用规范，正常判定
+      2. found=false + excluded    → 规则明确排除该对象 → **该对象不受约束**。
+                                     这是有结论的，应按"无限制/合规"处理
+      3. found=false + no_coverage → 知识库确实无法判定 → 才判 uncertain
+                     / not_applicable
     """
-    from .relevance import score_relevance
+    from .relevance import classify_rejection, score_relevance
 
     index = _get_index()
     # 阶段 1：BM25 粗排（便宜），多取一些给闸门筛选
     candidates = index.search(query, top_k=funnel)
     if not candidates:
         return json.dumps(
-            {"found": False, "message": "知识库中没有找到相关规范，请判为 uncertain 并说明缺少依据。"},
+            {
+                "found": False,
+                "reject_reason": "no_coverage",
+                "message": "知识库中完全找不到相关内容。请判 uncertain 并把 evidence 留空。",
+            },
             ensure_ascii=False,
         )
 
@@ -217,28 +225,49 @@ def search_spec_verified(
                 "relevance": score,
                 "relevance_reason": reason,
                 "bm25_score": round(c.score, 2),
+                "_chunk": c.chunk,
             }
         )
 
     passed = [v for v in verified if v["relevance"] >= min_relevance]
-    if not passed:
+    if passed:
+        for v in passed:
+            v.pop("_chunk", None)
         return json.dumps(
-            {
-                "found": False,
-                "verified": True,
-                "message": (
-                    "知识库里没有专门覆盖这个对象的规范（检索到的内容只是术语相关，"
-                    "并非适用规则）。请判 uncertain 并把 evidence 留空，不要依据这些内容下结论。"
-                ),
-                "rejected_candidates": [
-                    {"section_id": v["section_id"], "relevance": v["relevance"]} for v in verified
-                ],
-            },
-            ensure_ascii=False,
+            {"found": True, "verified": True, "hits": passed}, ensure_ascii=False
+        )
+
+    # 阶段 3：全被拒 —— 判定**为什么**被拒。这决定生成层该怎么做。
+    # 以 BM25 排名第一的候选作代表（它是最可能"本该适用"的那条）
+    lead_chunk = verified[0]["_chunk"]
+    reject_reason, detail = classify_rejection(query, lead_chunk)
+
+    if reject_reason == "excluded":
+        message = (
+            "检索到的规范**明确把该对象列为例外**，说明它不受这条规则约束。"
+            "这是一个有效结论：请判 pass，并在 reason 里说明「该对象被 XX 规范明确排除」。"
+            "不要判 uncertain。"
+        )
+    else:
+        message = (
+            "知识库没有能判定该对象的规范（检索到的内容只是主题相关，并非适用规则）。"
+            "请判 uncertain，把 evidence 留空，并说明知识库缺少对应规范。"
         )
 
     return json.dumps(
-        {"found": True, "verified": True, "hits": passed},
+        {
+            "found": False,
+            "verified": True,
+            "reject_reason": reject_reason,
+            "reject_detail": detail,
+            "leading_candidate": {
+                "section_id": lead_chunk.section_id,
+                "title": lead_chunk.section_title,
+                "relevance": verified[0]["relevance"],
+                "relevance_reason": verified[0]["relevance_reason"],
+            },
+            "message": message,
+        },
         ensure_ascii=False,
     )
 
@@ -272,10 +301,15 @@ TOOLS_SCHEMA_VERIFIED = [
         "function": {
             "name": "search_spec_verified",
             "description": (
-                "检索设计规范知识库，并验证检索结果是否**真的覆盖了**你要查的对象。"
-                "任何关于间距、颜色、字号、组件属性、命名的判定，都必须先调用本工具。"
-                "若返回 found=false，说明知识库没有覆盖该对象的规范，"
-                "此时必须判 uncertain 并把 evidence 留空，不得凭记忆或凭术语相似作答。"
+                "检索设计规范知识库，并验证结果是否**真的适用于**你要查的对象。"
+                "任何关于间距、颜色、字号、组件属性、命名的判定，都必须先调用本工具。\n\n"
+                "返回结果有三种情况，处理方式完全不同：\n"
+                "1) found=true：有适用规范，据此判定。\n"
+                "2) found=false 且 reject_reason=excluded："
+                "检索到的规范**明确把该对象列为例外**，即该对象不受这条规则约束。"
+                "这是一个有效结论，应判 pass 并说明被哪条规范排除，**不要判 uncertain**。\n"
+                "3) found=false 且 reject_reason=no_coverage/not_applicable："
+                "知识库无法判定该对象，应判 uncertain 并把 evidence 留空。"
             ),
             "parameters": {
                 "type": "object",

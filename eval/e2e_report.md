@@ -149,6 +149,10 @@ verified 模式: found=False → 被拒: TYPO-002 relevance=1, TYPO-004 relevanc
 
 ### 直接结论
 
+> ✅ **本节结论已被 `reject_reason_report.md` 修正**：回归已修复，
+> 引入结构化的 `reject_reason` 后表格行高恢复为 `pass`，且未引入新幻觉。
+> 下面保留当时的原始判断，以便追溯结论演进。
+
 在当前材料与实现下：
 
 | 收益 | 代价 |
