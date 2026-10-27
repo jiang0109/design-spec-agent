@@ -188,6 +188,7 @@ def search_spec_verified(
     top_k: int = 2,
     min_relevance: int = 2,
     funnel: int = 10,
+    max_judge: int = 5,
 ) -> str:
     """BM25 粗排 + LLM 相关性闸门 + 拒绝原因分类。
 
@@ -197,6 +198,28 @@ def search_spec_verified(
                                      这是有结论的，应按"无限制/合规"处理
       3. found=false + no_coverage → 知识库确实无法判定 → 才判 uncertain
                      / not_applicable
+
+    ⚠️ `max_judge` 的历史教训（不要改回 2）
+    ---------------------------------------
+    最初只对 top-2 做相关性判定以省成本，结果「通用规则 + 特定子对象」的查询
+    被系统性误拒。实测（eval/probe_general_rule.py）：
+
+        查询「主按钮文字色是否必须用语义令牌」
+          rank 1  CASE-005  → relevance 1（案例讲背景色）
+          rank 2  NAME-004  → relevance 1（只讲令牌命名）
+          rank 3  COLOR-003 → relevance 3 ← 判对了，但根本没被送去判定
+          rank 4  COLOR-003 → relevance 3 ← 同上
+
+        查询「辅助注释文字允许哪些字重」
+          rank 2  TYPO-003 → relevance 1
+          rank 5  TYPO-003 → relevance 2 ← 判对了，但被截断
+
+    也就是说：**判定器一直是对的，是我的截断让它看不到该看的规则。**
+    这类错误伪装成"判定器不够好"，很容易诱导人去改提示词（改错方向）。
+
+    现在放宽到 max_judge=5，但用**早期退出**控制成本：
+    一旦拿到一个 3 分命中（明确适用），或已累计 2 个命中，就不再往下判。
+    简单查询通常 1-2 次判定（不比原来贵），难题才付到 5 次。
     """
     from .relevance import classify_rejection, score_relevance
 
@@ -213,28 +236,36 @@ def search_spec_verified(
             ensure_ascii=False,
         )
 
-    # 阶段 2：只对最靠前的 top_k 做相关性判定（贵）
+    # 阶段 2：按 BM25 顺序判定，带早期退出
     verified = []
-    for c in candidates[:top_k]:
+    passed = []
+    judged = 0
+    for c in candidates[:max_judge]:
         score, reason = score_relevance(query, c.chunk)
-        verified.append(
-            {
-                "section_id": c.chunk.section_id,
-                "title": c.chunk.section_title,
-                "content": c.chunk.content,
-                "relevance": score,
-                "relevance_reason": reason,
-                "bm25_score": round(c.score, 2),
-                "_chunk": c.chunk,
-            }
-        )
+        judged += 1
+        entry = {
+            "section_id": c.chunk.section_id,
+            "title": c.chunk.section_title,
+            "content": c.chunk.content,
+            "relevance": score,
+            "relevance_reason": reason,
+            "bm25_score": round(c.score, 2),
+            "_chunk": c.chunk,
+        }
+        verified.append(entry)
+        if score >= min_relevance:
+            passed.append(entry)
+            # 早期退出：3 分是明确适用，1 个就够；否则拿到 2 个即可
+            if score >= 3 or len(passed) >= 2:
+                break
 
-    passed = [v for v in verified if v["relevance"] >= min_relevance]
     if passed:
-        for v in passed:
+        hits = passed[:top_k]
+        for v in hits:
             v.pop("_chunk", None)
         return json.dumps(
-            {"found": True, "verified": True, "hits": passed}, ensure_ascii=False
+            {"found": True, "verified": True, "judged": judged, "hits": hits},
+            ensure_ascii=False,
         )
 
     # 阶段 3：全被拒 —— 判定**为什么**被拒。这决定生成层该怎么做。
