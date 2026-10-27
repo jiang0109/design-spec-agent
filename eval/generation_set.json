@@ -1,0 +1,461 @@
+{
+  "_note": "生成层端到端评测集。每个判定点的期望判定由知识库规则的 params 推导，不参考 agent 输出。",
+  "_design": [
+    "31 份文档 / 35 个判定点，覆盖 5 类规则 + 3 类降级场景（无覆盖 / 排除型）。",
+    "每份文档 1-2 个判定点，避免多点文档导致模型合并 target 而无法对齐。",
+    "keywords 是用于把模型输出的 target 对齐到期望点的子串列表，主关键词在前。",
+    "  用列表而不是单词，是因为第一轮发现 3/7 的「错误」其实是匹配失败：",
+    "  模型确实判了，只是 target 措辞（英文 variant / 布尔属性 / 未声明）没命中预设词。",
+    "why 写明期望判定的推导依据（哪条规则的哪个 param），保证标注可审计。",
+    "**禁止事后修改 expect**：若 agent 结果与 expect 不符，按顺序排查 ——",
+    "  ① 匹配逻辑是否命中错点 ② 文档表述是否有歧义 ③ 规则理解是否真的错了。",
+    "  顺序不能反，否则评测就退化成给模型打掩护。"
+  ],
+  "cases": [
+    {
+      "id": "G01",
+      "doc": "# 卡片组件 Card\n\n**紧凑列表卡片内边距**：12px。\n\n**营销位卡片内边距**：20px。\n",
+      "points": [
+        {
+          "keyword": "紧凑",
+          "rule": "SPACING-001",
+          "expect": "pass",
+          "why": "compact_list 映射为 12，在 allowed {12,16,24} 内"
+        },
+        {
+          "keyword": "营销",
+          "rule": "SPACING-001",
+          "expect": "fail",
+          "why": "营销位应 24；20 不在 allowed {12,16,24}"
+        }
+      ]
+    },
+    {
+      "id": "G02",
+      "doc": "# 卡片间距\n\n**组内卡片间距**：同一组卡片之间的间距为 16px。\n\n**分组间距**：不同分组之间的间距为 20px。\n",
+      "points": [
+        {
+          "keyword": "组内",
+          "rule": "SPACING-002",
+          "expect": "pass",
+          "why": "inside_group 允许 16"
+        },
+        {
+          "keyword": "分组",
+          "rule": "SPACING-002",
+          "expect": "fail",
+          "why": "allowed 只有 {16,24}，20 非法"
+        }
+      ]
+    },
+    {
+      "id": "G03",
+      "doc": "# 仪表盘\n\n**分组间距**：两个分组之间使用 16px，组内卡片间距同样为 16px。\n",
+      "points": [
+        {
+          "keyword": "分组",
+          "rule": "SPACING-003",
+          "expect": "fail",
+          "why": "要求 between_groups > inside_group 且 ≥24；此处两者相等"
+        }
+      ]
+    },
+    {
+      "id": "G04",
+      "doc": "# 页面布局\n\n**桌面端页面外边距**：左右各 24px。\n\n**窄屏页面外边距**：左右各 12px。\n",
+      "points": [
+        {
+          "keyword": "桌面",
+          "rule": "SPACING-004",
+          "expect": "pass",
+          "why": "desktop 映射为 24"
+        },
+        {
+          "keyword": "窄屏",
+          "rule": "SPACING-004",
+          "expect": "fail",
+          "why": "narrow 映射为 16，12 不在 range 16-24"
+        }
+      ]
+    },
+    {
+      "id": "G05",
+      "doc": "# 图标按钮 IconButton\n\n**图标与文字间距**：8px，按钮高度 40px。\n",
+      "points": [
+        {
+          "keyword": "间距",
+          "rule": "SPACING-005",
+          "expect": "pass",
+          "why": "8 是 4 的倍数；高度 40 满足 min_touch_target 40"
+        }
+      ]
+    },
+    {
+      "id": "G06",
+      "doc": "# 卡片辅助说明文字\n\n**文字色**：使用 #767F8C，置于 #FFFFFF 背景之上，实测对比度 4.1:1。\n",
+      "points": [
+        {
+          "rule": "COLOR-001",
+          "expect": "fail",
+          "why": "4.1:1 低于正文规定的 4.5:1",
+          "keywords": [
+            "对比度",
+            "文字色",
+            "辅助说明"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G07",
+      "doc": "# 区块标题\n\n**标题文字与背景对比度**：字号 20px，与背景实测对比度 3.2:1。\n",
+      "points": [
+        {
+          "keywords": [
+            "对比度"
+          ],
+          "rule": "COLOR-002",
+          "expect": "pass",
+          "why": "≥18px 属大号文字，门槛 3:1，3.2 达标"
+        }
+      ]
+    },
+    {
+      "id": "G08",
+      "doc": "# 主按钮 Primary Button\n\n**文字色**：使用语义令牌 color-text-primary。\n\n**背景色**：直接使用 blue-500。\n",
+      "points": [
+        {
+          "keyword": "文字色",
+          "rule": "COLOR-003",
+          "expect": "pass",
+          "why": "使用语义 token，合规"
+        },
+        {
+          "keyword": "背景",
+          "rule": "COLOR-003",
+          "expect": "fail",
+          "why": "blue-500 是原始色值变量，明确禁止"
+        }
+      ]
+    },
+    {
+      "id": "G09",
+      "doc": "# 标签 Tag\n\n**语义色类别**：新增自定义语义色 color-accent-strong 作为第七类语义色。\n",
+      "points": [
+        {
+          "keyword": "语义色",
+          "rule": "COLOR-004",
+          "expect": "fail",
+          "why": "允许的语义色只有 6 类，不含第七类"
+        }
+      ]
+    },
+    {
+      "id": "G10",
+      "doc": "# 商品推荐标签\n\n**底色**：使用 success 绿色作为「推荐」标签的底色。\n",
+      "points": [
+        {
+          "keyword": "底色",
+          "rule": "COLOR-005",
+          "expect": "fail",
+          "why": "success 是状态色，不得用于非状态语义的推荐标签"
+        }
+      ]
+    },
+    {
+      "id": "G11",
+      "doc": "# 文章页\n\n**卡片标题字号**：18px。\n",
+      "points": [
+        {
+          "keyword": "字号",
+          "rule": "TYPO-001",
+          "expect": "fail",
+          "why": "18 不在 allowed {12,14,16,20,24,32}"
+        }
+      ]
+    },
+    {
+      "id": "G12",
+      "doc": "# 设置页\n\n**正文行高**：正文 14px，行高 21px。\n",
+      "points": [
+        {
+          "keyword": "行高",
+          "rule": "TYPO-002",
+          "expect": "pass",
+          "why": "21 / 14 = 1.5，严格等于规定倍数"
+        }
+      ]
+    },
+    {
+      "id": "G13",
+      "doc": "# 卡片标题行高\n\n**行高**：标题字号 20px，行高 26px。\n",
+      "points": [
+        {
+          "keyword": "行高",
+          "rule": "TYPO-002",
+          "expect": "fail",
+          "why": "26 / 20 = 1.3，不等于 1.5"
+        }
+      ]
+    },
+    {
+      "id": "G14",
+      "doc": "# 注释文字\n\n**字重**：辅助注释使用 300 字重。\n",
+      "points": [
+        {
+          "keyword": "字重",
+          "rule": "TYPO-003",
+          "expect": "fail",
+          "why": "规定字重仅 400/500/600，正文不得低于 400"
+        }
+      ]
+    },
+    {
+      "id": "G15",
+      "doc": "# 列表项 ListItem\n\n**正文默认字号**：正文使用 16px 作为默认字号。\n",
+      "points": [
+        {
+          "keyword": "字号",
+          "rule": "TYPO-004",
+          "expect": "fail",
+          "why": "正文默认字号规定为 14"
+        }
+      ]
+    },
+    {
+      "id": "G16",
+      "doc": "# 剪贴板卡片 ClipboardCard\n\n**属性**：同时声明了 size 与 variant 两个属性。\n",
+      "points": [
+        {
+          "keyword": "属性",
+          "rule": "COMP-001",
+          "expect": "pass",
+          "why": "size 与 variant 均已显式声明"
+        }
+      ]
+    },
+    {
+      "id": "G17",
+      "doc": "# 剪贴板卡片 ClipboardCard\n\n**属性**：只声明了 variant，未声明 size。\n",
+      "points": [
+        {
+          "keyword": "属性",
+          "rule": "COMP-001",
+          "expect": "fail",
+          "why": "缺 size，二者必须同时显式声明"
+        }
+      ]
+    },
+    {
+      "id": "G18",
+      "doc": "# 加载按钮 LoadingButton\n\n**属性名**：使用 isLoading 表示加载态。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性命名",
+            "布尔属性",
+            "isLoading",
+            "属性名"
+          ],
+          "rule": "COMP-003",
+          "expect": "pass",
+          "why": "布尔属性以 is 开头，符合规范"
+        }
+      ]
+    },
+    {
+      "id": "G19",
+      "doc": "# 加载按钮 LoadingButton\n\n**属性名**：布尔属性使用 loading。\n",
+      "points": [
+        {
+          "keywords": [
+            "布尔属性",
+            "属性名",
+            "loading"
+          ],
+          "rule": "COMP-003",
+          "expect": "fail",
+          "why": "布尔属性缺 is/has/can 前缀"
+        }
+      ]
+    },
+    {
+      "id": "G20",
+      "doc": "# 主按钮 Primary Button\n\n**属性默认值**：variant 默认值为 primary，但未声明 size 的默认值。\n",
+      "points": [
+        {
+          "keywords": [
+            "variant",
+            "变体"
+          ],
+          "rule": "COMP-004",
+          "expect": "pass",
+          "why": "variant 默认值 primary 符合规范要求"
+        },
+        {
+          "keywords": [
+            "size"
+          ],
+          "rule": "COMP-004",
+          "expect": "fail",
+          "why": "size 与 variant 都必须有默认值，此处缺 size 的默认值"
+        }
+      ]
+    },
+    {
+      "id": "G21",
+      "doc": "# 主按钮 Primary Button\n\n**变体**：variant 取值使用 tertiary。\n",
+      "points": [
+        {
+          "keywords": [
+            "变体",
+            "variant"
+          ],
+          "rule": "COMP-005",
+          "expect": "fail",
+          "why": "allowed 为 primary/secondary/ghost/danger，不含 tertiary"
+        }
+      ]
+    },
+    {
+      "id": "G22",
+      "doc": "# 按钮图层\n\n**图层命名**：图层命名为 btn-primary-disabled。\n",
+      "points": [
+        {
+          "rule": "NAME-001",
+          "expect": "fail",
+          "why": "要求「组件名/修饰/状态」斜杠格式",
+          "keywords": [
+            "图层命名",
+            "图层名",
+            "btn-primary-disabled"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G23",
+      "doc": "# 组件命名\n\n**组件名**：组件命名为 icon_button。\n",
+      "points": [
+        {
+          "rule": "NAME-002",
+          "expect": "fail",
+          "why": "要求 PascalCase，下划线写法违规",
+          "keywords": [
+            "组件命名",
+            "组件名",
+            "icon_button"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G24",
+      "doc": "# 数据卡片图层\n\n**图层名**：图层名仍为 Frame 123。\n",
+      "points": [
+        {
+          "keywords": [
+            "图层命名",
+            "图层名",
+            "Frame"
+          ],
+          "rule": "NAME-003",
+          "expect": "fail",
+          "why": "Frame 123 是自动生成的默认名称"
+        }
+      ]
+    },
+    {
+      "id": "G25",
+      "doc": "# 设计令牌\n\n**令牌命名**：正文主色令牌命名为 colorTextPrimary。\n",
+      "points": [
+        {
+          "rule": "NAME-004",
+          "expect": "fail",
+          "why": "令牌要求 kebab-case 三段式",
+          "keywords": [
+            "令牌命名",
+            "令牌",
+            "colorTextPrimary"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G26",
+      "doc": "# 卡片视觉\n\n**圆角**：卡片圆角使用 8px。\n",
+      "points": [
+        {
+          "keyword": "圆角",
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库没有任何圆角规则，应判 uncertain"
+        }
+      ]
+    },
+    {
+      "id": "G27",
+      "doc": "# 悬浮提示 Tooltip\n\n**投影**：使用 0 4px 12px 投影。\n",
+      "points": [
+        {
+          "keyword": "投影",
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库没有投影规范"
+        }
+      ]
+    },
+    {
+      "id": "G28",
+      "doc": "# 抽屉 Drawer\n\n**动效**：出现时 150ms 淡入。\n",
+      "points": [
+        {
+          "keyword": "动效",
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库没有动效时长规范"
+        }
+      ]
+    },
+    {
+      "id": "G29",
+      "doc": "# 数据表格 DataTable\n\n**单元格行高**：表格单元格行高使用 1.6 倍。\n",
+      "points": [
+        {
+          "keyword": "行高",
+          "rule": "TYPO-002 例外",
+          "expect": "pass",
+          "why": "TYPO-002 例外明确「表格单元格不参与行高倍数校验」→ 不受约束 → 不存在违规"
+        }
+      ]
+    },
+    {
+      "id": "G30",
+      "doc": "# 全屏沉浸式视图\n\n**卡片内边距**：全屏沉浸式视图内的卡片内边距使用 8px。\n",
+      "points": [
+        {
+          "keyword": "内边距",
+          "rule": "SPACING-001 例外",
+          "expect": "pass",
+          "why": "SPACING-001 例外「全屏沉浸式视图内的卡片不受此限制」"
+        }
+      ]
+    },
+    {
+      "id": "G31",
+      "doc": "# 布局容器 Container\n\n**属性**：纯布局容器 Container 未声明 size 与 variant。\n",
+      "points": [
+        {
+          "keywords": [
+            "Container",
+            "未声明",
+            "布局容器"
+          ],
+          "rule": "COMP-001 例外",
+          "expect": "pass",
+          "why": "COMP-001 例外「纯布局容器（Container / Divider）不声明 size 与 variant」"
+        }
+      ]
+    }
+  ]
+}

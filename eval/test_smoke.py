@@ -194,6 +194,52 @@ def t_field_weight_equivalence() -> str:
     return f"{min(12, len(qs))} 题逐题一致"
 
 
+# ---------------------------------------------------------------- 9
+def t_generation_set() -> str:
+    from src.chunking import load_sections
+
+    data = json.loads((ROOT / "eval" / "generation_set.json").read_text(encoding="utf-8"))
+    cases = data["cases"]
+    assert cases, "生成层评测集为空"
+    ids = [c["id"] for c in cases]
+    assert len(ids) == len(set(ids)), "文档 id 重复"
+
+    known = {s.section_id for s in load_sections()}
+    rules = {x for x in known if not x.startswith("CASE")}
+    all_rules = {s.section_id for s in load_sections() if not s.section_id.startswith("CASE")}
+
+    n_points = 0
+    errs: list[str] = []
+    for c in cases:
+        assert c.get("doc", "").strip(), f"{c['id']} 文档为空"
+        assert c.get("points"), f"{c['id']} 无判定点"
+        for p in c["points"]:
+            n_points += 1
+            # 每个点必须有可匹配的关键词与推导依据
+            kws = p.get("keywords") or ([p["keyword"]] if p.get("keyword") else [])
+            if not kws:
+                errs.append(f"{c['id']} 判定点缺 keyword/keywords")
+            if not p.get("why"):
+                errs.append(f"{c['id']} 判定点缺 why（推导依据）")
+            if p.get("expect") not in ("pass", "fail", "uncertain"):
+                errs.append(f"{c['id']} expect 非法：{p.get('expect')}")
+
+    # 覆盖度：所有规则类别都应至少有一个判定点
+    covered_prefix = {
+        r.split("-")[0] for c in cases for p in c["points"]
+        for r in [p.get("rule", "")] if r.split("-")[0] in {"SPACING", "COLOR", "TYPO", "COMP", "NAME"}
+    }
+    assert covered_prefix == {"SPACING", "COLOR", "TYPO", "COMP", "NAME"}, \
+        f"规则类别覆盖不全：{sorted(covered_prefix)}"
+
+    # 三类场景都要有
+    expects = {p["expect"] for c in cases for p in c["points"]}
+    assert expects == {"pass", "fail", "uncertain"}, f"期望值种类不全：{sorted(expects)}"
+
+    assert not errs, str(errs[:3])
+    return f"{len(cases)} 文档 / {n_points} 判定点 / 5 类规则 + 3 种期望"
+
+
 def main() -> int:
     print("=" * 74)
     print("冒烟测试（离线不变量，零 API 调用）")
@@ -207,6 +253,7 @@ def main() -> int:
     check("6 结构化字段可见", t_structured_fields)
     check("7 检索基线未退化", t_retrieval_baseline)
     check("8 字段加权等价性", t_field_weight_equivalence)
+    check("9 生成层评测集结构", t_generation_set)
 
     print()
     print("=" * 74)
