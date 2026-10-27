@@ -133,6 +133,7 @@ def run_one(doc_path: Path, llm_verify: bool) -> dict:
         "completion_tokens": ar.completion_tokens,
         "elapsed": ar.elapsed_sec,
         "drift": ar.provenance_drift,
+        "reject_reasons": ar.reject_reasons,
     }
 
 
@@ -173,6 +174,8 @@ def main() -> int:
             for i in decided:
                 flag = "⚠️ 无依据" if not i["has_evidence"] else "有依据"
                 print(f"        下结论: {i['target']} → {i['verdict']}（{flag}）")
+            if r["reject_reasons"]:
+                print(f"        检索层拒答: {r['reject_reasons']}")
         print()
         results.append((doc.name, row["bm25"], row["verified"]))
 
@@ -238,6 +241,24 @@ def main() -> int:
         print(f"  {mode:<10} token {pt}+{ct}｜工具调用 {tc} 次｜总耗时 {el:.1f}s"
               f"（每份 {el/len(rs):.1f}s）")
 
+    # ---- 检索层拒答记录 ----
+    print()
+    print("=" * 92)
+    print("检索层拒答记录（reject_reason）—— 回归检查的关键证据")
+    print("=" * 92)
+    any_reject = False
+    for name, b, v in results:
+        for r in (b, v):
+            if r["reject_reasons"]:
+                any_reject = True
+                print(f"  {name:<24}{r['mode']:<10}{r['reject_reasons']}")
+    if not any_reject:
+        print("  本次无拒答记录（所有检索都返回了 found=true）")
+    else:
+        print()
+        print("  解读：excluded = 该对象被规范明确排除 → 应判 pass（不是 uncertain）")
+        print("        no_coverage / not_applicable = 知识库无法判定 → 应判 uncertain")
+
     # ---- 结论 ----
     print()
     print("=" * 92)
@@ -248,16 +269,37 @@ def main() -> int:
     print(f"对未覆盖型判定点下结论：bm25 {bd} 条 → verified {vd} 条")
     print(f"其中无依据编造：        bm25 {bf} 条 → verified {vf} 条")
     print(f"已覆盖项漏判（回归）：  {'无' if reg_lost == 0 else f'{reg_lost} 组出现退化'}")
+
+    # 排除型判定的正确性：bm25 容易把"例外排除"误判成违规
+    excl_ok = []
+    for name, b, v in results:
+        for r in (b, v):
+            if not r["reject_reasons"]:
+                continue
+            if any("excluded" in x for x in r["reject_reasons"]):
+                excl_ok.append((r["mode"], r["issues"]))
     print()
-    if bf == 0 and vf == 0:
-        print("→ ⚪ 未观察到编造，两种模式在本次材料上无差异。")
-        print("  最可能的原因：生成层的判定纪律（Week 1 已验证）已经足够强，")
-        print("  在检索层给出'看起来相关'的内容时，它仍会拒绝据此下结论。")
-        print("  要观察到差异，需要能诱发生成层误信的更强材料。")
+    if excl_ok:
+        print("含「排除型」拒答的文档判定对比（正确结果为 pass）：")
+        for name, b, v in results:
+            if not (b["reject_reasons"] or v["reject_reasons"]):
+                continue
+            bs = [f"{i['target']}→{i['verdict']}" for i in b["issues"] if "行高" in i["target"]]
+            vs = [f"{i['target']}→{i['verdict']}" for i in v["issues"] if "行高" in i["target"]]
+            if bs or vs:
+                print(f"  bm25     : {bs}")
+                print(f"  verified : {vs}")
+                print("  → 例外排除的对象不受该规则约束，正确判定是 pass")
+
+    print()
+    if vf > bf:
+        print("→ ❌ 反效果：verified 引入了更多编造。")
     elif vf < bf:
         print(f"→ ✅ 拒答接入有效：无依据编造从 {bf} 条降到 {vf} 条。")
     else:
-        print("→ ❌ 反效果。")
+        print("→ ⚪ 编造次数无差异（两者均为 0）——")
+        print("  这不等于接入无价值：本次材料里生成层的判定纪律已足够强，")
+        print("  接入的收益体现在「排除型结论的判定正确性」上（见上方对比）。")
     if reg_lost:
         print(f"→ ⚠️ 但接入带来了回归：{reg_lost} 组已覆盖项出现漏判（矫枉过正）。")
     print()

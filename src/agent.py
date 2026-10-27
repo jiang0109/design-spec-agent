@@ -74,7 +74,7 @@ def run_tool_loop(
     doc: str,
     max_steps: int = MAX_STEPS,
     max_tool_calls: int = MAX_TOOL_CALLS,
-    llm_verify: bool = False,
+    llm_verify: bool | None = None,
     verbose: bool = True,
 ) -> tuple[str, list[dict], dict]:
     """返回 (模型最终文本, 完整消息历史, 用量统计)。
@@ -84,13 +84,13 @@ def run_tool_loop(
       内层 max_tool_calls —— 限制调用总数，防"一轮并发几十个调用"的费用失控
     两者都不能少：实测 max_steps=1 时模型仍在单轮里发出 6 个调用。
 
-    llm_verify=True 时启用 LLM 相关性闸门（检索层可拒答），
-    否则走纯 BM25 —— 两者的唯一差异就是这个开关，便于对照实验。
+    llm_verify=None 时使用 tools.VERIFY_ENABLED 的默认值（当前为 True）；
+    显式传 False 可走纯 BM25，用于对照实验。
     """
-    # 开关是模块级状态，供 dispatch_tool 读取
-    import src.tools as _tools
+    from .tools import VERIFY_ENABLED
 
-    _tools.VERIFY_ENABLED = llm_verify
+    # 显式解析为布尔值后再往下传，不再改写模块全局（避免隐藏状态污染）
+    use_verify = VERIFY_ENABLED if llm_verify is None else llm_verify
 
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -100,7 +100,7 @@ def run_tool_loop(
     budget_exhausted = False
 
     for step in range(1, max_steps + 1):
-        result = ask_llm(messages, tools=active_schema(llm_verify), temperature=0.2)
+        result = ask_llm(messages, tools=active_schema(use_verify), temperature=0.2)
         _usage_add(usage, result)
         msg = result.message
 
@@ -152,7 +152,7 @@ def run_tool_loop(
                 if name != "search_spec_verified" and name not in TOOL_IMPLS:
                     payload = f"不存在名为 {name} 的工具。"
                 else:
-                    out = dispatch_tool(name, args)
+                    out = dispatch_tool(name, args, verify=use_verify)
                     payload = (
                         out
                         if out is not None
@@ -164,6 +164,19 @@ def run_tool_loop(
                 payload = f"工具执行失败：{type(e).__name__}: {e}"
 
             usage["tool_calls"] += 1
+
+            # 记录拒绝原因：让"检索层为什么拒答"成为可观测产物，而不是只在对话里
+            if isinstance(payload, str):
+                try:
+                    _d = json.loads(payload)
+                except (json.JSONDecodeError, TypeError):
+                    _d = None
+                if isinstance(_d, dict) and _d.get("reject_reason"):
+                    _q = args.get("query") if isinstance(args, dict) else ""
+                    usage.setdefault("reject_reasons", []).append(
+                        f"{_d['reject_reason']}（{_q}）"
+                    )
+
             if verbose:
                 q = args.get("query") if isinstance(args, dict) else args
                 print(f"[step {step}] 调用 {name}({q!r})")
@@ -325,7 +338,7 @@ def run_agent(
     max_tool_calls: int = MAX_TOOL_CALLS,
     max_report_attempts: int = MAX_REPORT_ATTEMPTS,
     loose_instruction: bool = False,
-    llm_verify: bool = False,
+    llm_verify: bool | None = None,
     verbose: bool = False,
 ) -> AgentReport:
     started = time.perf_counter()
@@ -360,6 +373,7 @@ def run_agent(
         provenance_drift=drift,
         provenance_checked=drift_checked,
         budget_exhausted=bool(usage.get("budget_exhausted")),
+        reject_reasons=usage.get("reject_reasons", []),
     )
 
 

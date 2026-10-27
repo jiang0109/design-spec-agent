@@ -93,3 +93,12 @@ class AgentReport(BaseModel):
         default=False,
         description="是否因为触达工具调用总预算而被迫中断检索",
     )
+    reject_reasons: list[str] = Field(
+        default_factory=list,
+        description=(
+            "检索层拒答记录，形如 'excluded（表格行高...）'。"
+            "excluded 表示该对象被规范明确排除（应判 pass）；"
+            "no_coverage / not_applicable 表示知识库无法判定（应判 uncertain）。"
+            "暴露此字段是为了让拒答成为可观测产物，便于回归检查。"
+        ),
+    )

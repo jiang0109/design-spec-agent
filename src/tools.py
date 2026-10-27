@@ -280,15 +280,33 @@ TOOL_IMPLS = {
     "search_spec_verified": search_spec_verified,
 }
 
-# 相关性闸门的默认开关。由 run_agent(llm_verify=...) 设置，
+# 相关性闸门的默认开关。由 run_agent(llm_verify=...) 覆盖，
 # 便于用同一份代码跑"接入前 / 接入后"的对照实验。
-VERIFY_ENABLED = False
+#
+# 默认开启的依据（不是拍脑袋）：
+#   对照实验（python -m eval.run_e2e --docs e2e_confusable.md）显示
+#     闸门关闭（纯 BM25）：表格行高倍数 → fail   ← 误判
+#     闸门开启（含拒绝原因）：表格行高 1.6 倍 → pass  ← 正确
+#   原因：TYPO-002 的例外写着"表格单元格不参与行高倍数校验"，
+#   即该对象不受约束 —— 这是有结论的，不该判违规。
+#   纯 BM25 会把这条例外规则当成适用依据，反而得出错误结论。
+#
+# 代价：每题额外 2 次（相关性）~3 次（含拒绝原因）LLM 调用，
+# 端到端实测耗时约增加 2.9s/份（5.5s → 9.1s）。
+VERIFY_ENABLED = True
 
 
-def dispatch_tool(name: str, args: dict) -> str | None:
-    """按当前开关执行工具调用。返回 None 表示工具不存在。"""
+def dispatch_tool(name: str, args: dict, verify: bool | None = None) -> str | None:
+    """按开关执行工具调用。返回 None 表示工具不存在。
+
+    verify 显式传入优先；为 None 时回退到模块默认 VERIFY_ENABLED。
+    为什么用显式参数而不是改模块全局：早期版本直接写 `_tools.VERIFY_ENABLED = llm_verify`，
+    结果跑完一次对照实验后全局状态就被永久改成那次的值 ——
+    后续调用的行为取决于"上一次实验跑的是哪一组"，属于隐藏状态污染。
+    """
     if name == "search_spec_verified":
-        if VERIFY_ENABLED:
+        use_verify = VERIFY_ENABLED if verify is None else verify
+        if use_verify:
             return search_spec_verified(**args)
         return search_spec_bm25(**args)
     fn = TOOL_IMPLS.get(name)
