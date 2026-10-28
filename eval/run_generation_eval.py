@@ -183,6 +183,7 @@ def run_case(case: dict, verify: bool | None) -> dict:
         "points": points_out,
         "extra": extra,
         "reject_reasons": ar.reject_reasons,
+        "queries": ar.retrieval_queries,
         "prompt_tokens": ar.prompt_tokens,
         "completion_tokens": ar.completion_tokens,
         "elapsed": ar.elapsed_sec,
@@ -308,6 +309,36 @@ def main() -> int:
         print("        但也可能是把同一问题拆成了两条。需人工判断，故不计入准确率。")
         for cid, e in extras[:12]:
             print(f"  {cid}: {e}")
+
+    # ---------------- 查询格式（验证提示词是否真的生效）----------------
+    # 只看最终分数无法判断"约束查询表述"这条指令有没有被执行，
+    # 所以统计 agent 实际发出的查询里有多少仍带「预设答案框架」的措辞。
+    PRESUPPOSE = [
+        "允许哪几档", "允许哪些", "哪几档", "哪几档取值",
+        "应使用哪个", "应该用哪个", "哪个变量", "哪个令牌", "哪个档",
+        "是否必须", "是否与内容", "是否一致",
+    ]
+    all_queries = [q for r in results for q in r.get("queries", [])]
+    flagged = [q for q in all_queries if any(p in q for p in PRESUPPOSE)]
+    print()
+    print("=" * 88)
+    print("查询格式统计（验证「约束查询表述」是否生效）")
+    print("=" * 88)
+    print(f"  查询总数            : {len(all_queries)}")
+    print(f"  带预设框架措辞的查询 : {len(flagged)}"
+          f"（{len(flagged)/max(1,len(all_queries))*100:.0f}%）")
+    if flagged:
+        print("  仍带预设框架的示例：")
+        for q in flagged[:6]:
+            print(f"    ✗ {q}")
+    ok_q = [q for q in all_queries if q not in flagged]
+    if ok_q:
+        print("  「对象+属性+取值」式查询示例：")
+        for q in ok_q[:4]:
+            print(f"    ✓ {q}")
+    print()
+    print("  说明：本项只统计措辞形态，不判断查询好坏。")
+    print("        『对象+属性+取值』式查询更利于规则匹配，也更利于结果复现。")
 
     # ---------------- 成本 ----------------
     pt = sum(r["prompt_tokens"] for r in results)

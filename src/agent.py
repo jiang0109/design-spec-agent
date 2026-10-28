@@ -47,6 +47,14 @@ SYSTEM_PROMPT = """你是设计规范审查助手，负责把设计文档和设�
 
 检索纪律：
 - 一次检索就能覆盖的点，不要重复查询；同一主题不要反复换措辞重查。
+- **查询写成「对象 + 属性 + 取值」，直接陈述要检查的事实**，
+  例如 "卡片内边距 20px"、"正文行高 1.4 倍"、"图层名 Rectangle 45"。
+- **不要在查询里预设答案的形式，也不要引入规范未定义的判断维度。**
+  预设框架会让检索偏离真正该匹配的规则，例如：
+    问"允许哪几档" —— 若规范只给下限而没有档位，就无从匹配
+    问"应该用哪个变量" —— 若规范恰恰禁止使用那类变量，问题就预设反了
+    问"是否与内容一致" —— 这是规范未定义的维度，没有规则能回答
+  正确做法是只陈述被检查的对象、属性和取值，让规则自己决定是否适用。
 - 系统有工具调用次数上限。如果被告知已达上限，必须停止检索，
   并仅基于已有依据作判定；仍无依据的点直接判 uncertain，不得凭记忆补全。"""
 
@@ -164,6 +172,10 @@ def run_tool_loop(
                 payload = f"工具执行失败：{type(e).__name__}: {e}"
 
             usage["tool_calls"] += 1
+
+            # 记录查询语句：适用性判定高度依赖查询措辞，必须可观测
+            if isinstance(args, dict) and args.get("query"):
+                usage.setdefault("queries", []).append(str(args["query"]))
 
             # 记录拒绝原因：让"检索层为什么拒答"成为可观测产物，而不是只在对话里
             if isinstance(payload, str):
@@ -374,6 +386,7 @@ def run_agent(
         provenance_checked=drift_checked,
         budget_exhausted=bool(usage.get("budget_exhausted")),
         reject_reasons=usage.get("reject_reasons", []),
+        retrieval_queries=usage.get("queries", []),
     )
 
 

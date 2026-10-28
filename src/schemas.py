@@ -102,3 +102,12 @@ class AgentReport(BaseModel):
             "暴露此字段是为了让拒答成为可观测产物，便于回归检查。"
         ),
     )
+    retrieval_queries: list[str] = Field(
+        default_factory=list,
+        description=(
+            "agent 实际发出的检索查询语句（按顺序）。"
+            "加这个字段是因为：适用性判定高度依赖查询措辞，"
+            "而此前只能看到最终判定、看不到它到底问了什么 —— "
+            "导致把『查询问偏了』误诊成『判定器太严格』。"
+        ),
+    )
