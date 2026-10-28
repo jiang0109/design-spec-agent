@@ -1,0 +1,1211 @@
+{
+  "_note": "由 eval/gen_generation_set.py 从探针表生成；期望判定全部由知识库规则的 params 推导。",
+  "_design": [
+    "手写难例在 generation_set.json，本文件负责「广与可复现」，两者合并评测。",
+    "生成器只渲染固定模板，措辞确定性来自模板而非人工，避免引入歧义。",
+    "新增判定点只需在 PROBES 表加一行数据。"
+  ],
+  "cases": [
+    {
+      "id": "E001",
+      "doc": "# 紧凑列表卡片\n\n## 规格\n\n内边距：内边距内边距使用 12px。\n",
+      "points": [
+        {
+          "keywords": [
+            "内边距",
+            "内边距使用 "
+          ],
+          "rule": "SPACING-001",
+          "expect": "pass",
+          "why": "12 在 allowed {12,16,24}（compact_list 档）"
+        }
+      ]
+    },
+    {
+      "id": "E002",
+      "doc": "# 营销位大卡片\n\n**内边距**：内边距内边距使用 24px。\n",
+      "points": [
+        {
+          "keywords": [
+            "内边距",
+            "内边距使用 "
+          ],
+          "rule": "SPACING-001",
+          "expect": "pass",
+          "why": "24 在 allowed {12,16,24}（marketing 档）"
+        }
+      ]
+    },
+    {
+      "id": "E003",
+      "doc": "# 常规内容卡片\n\n## 规格\n\n内边距：内边距内边距使用 32px。\n",
+      "points": [
+        {
+          "keywords": [
+            "内边距",
+            "内边距使用 "
+          ],
+          "rule": "SPACING-001",
+          "expect": "fail",
+          "why": "32 不在 allowed {12,16,24}"
+        }
+      ]
+    },
+    {
+      "id": "E004",
+      "doc": "# 紧凑列表卡片\n\n**内边距**：内边距内边距使用 8px。\n",
+      "points": [
+        {
+          "keywords": [
+            "内边距",
+            "内边距使用 "
+          ],
+          "rule": "SPACING-001",
+          "expect": "fail",
+          "why": "8 不在 allowed {12,16,24}"
+        }
+      ]
+    },
+    {
+      "id": "E005",
+      "doc": "# 分组内容区\n\n## 规格\n\n卡片间距：卡片间距不同分组之间的间距为 24px。\n",
+      "points": [
+        {
+          "keywords": [
+            "卡片间距",
+            "不同分组之间"
+          ],
+          "rule": "SPACING-002",
+          "expect": "pass",
+          "why": "between_groups 映射为 24，且在 allowed {16,24}"
+        }
+      ]
+    },
+    {
+      "id": "E006",
+      "doc": "# 分组内容区\n\n**卡片间距**：卡片间距同组卡片之间的间距为 12px。\n",
+      "points": [
+        {
+          "keywords": [
+            "卡片间距",
+            "同组卡片之间"
+          ],
+          "rule": "SPACING-002",
+          "expect": "fail",
+          "why": "12 不在 allowed {16,24}"
+        }
+      ]
+    },
+    {
+      "id": "E007",
+      "doc": "# 分组内容区\n\n## 规格\n\n卡片间距：卡片间距同组卡片之间的间距为 16px 且均相同。\n",
+      "points": [
+        {
+          "keywords": [
+            "卡片间距",
+            "同组卡片之间"
+          ],
+          "rule": "SPACING-002",
+          "expect": "pass",
+          "why": "16 在 allowed {16,24}，且同组一致"
+        }
+      ]
+    },
+    {
+      "id": "E008",
+      "doc": "# 仪表盘分组\n\n**分组间距**：分组间距组内间距 16px，组间间距 24px。\n",
+      "points": [
+        {
+          "keywords": [
+            "分组间距",
+            "组间",
+            "组内",
+            "组内间距 1"
+          ],
+          "rule": "SPACING-003",
+          "expect": "pass",
+          "why": "24 > 16 且 ≥ min_between_groups 24"
+        }
+      ]
+    },
+    {
+      "id": "E009",
+      "doc": "# 仪表盘分组\n\n## 规格\n\n分组间距：分组间距组内间距 24px，组间间距 24px。\n",
+      "points": [
+        {
+          "keywords": [
+            "分组间距",
+            "组间",
+            "组内",
+            "组内间距 2"
+          ],
+          "rule": "SPACING-003",
+          "expect": "fail",
+          "why": "组间未严格大于组内"
+        }
+      ]
+    },
+    {
+      "id": "E010",
+      "doc": "# 窄屏布局\n\n**页面外边距**：页面外边距窄屏左右外边距为 16px。\n",
+      "points": [
+        {
+          "keywords": [
+            "页面外边距",
+            "窄屏左右外边"
+          ],
+          "rule": "SPACING-004",
+          "expect": "pass",
+          "why": "窄屏映射为 16，在 range 16-24"
+        }
+      ]
+    },
+    {
+      "id": "E011",
+      "doc": "# 桌面端布局\n\n## 规格\n\n页面外边距：页面外边距桌面端左右外边距为 8px。\n",
+      "points": [
+        {
+          "keywords": [
+            "页面外边距",
+            "桌面端左右外"
+          ],
+          "rule": "SPACING-004",
+          "expect": "fail",
+          "why": "8 低于 range 下限 16"
+        }
+      ]
+    },
+    {
+      "id": "E012",
+      "doc": "# 内容区布局\n\n**内容区最大宽度**：内容区最大宽度内容区最大宽度为 1200px。\n",
+      "points": [
+        {
+          "keywords": [
+            "内容区最大宽度"
+          ],
+          "rule": "SPACING-004",
+          "expect": "pass",
+          "why": "等于 max_content_width 1200"
+        }
+      ]
+    },
+    {
+      "id": "E013",
+      "doc": "# 内容区布局\n\n## 规格\n\n内容区最大宽度：内容区最大宽度内容区最大宽度为 1440px。\n",
+      "points": [
+        {
+          "keywords": [
+            "内容区最大宽度"
+          ],
+          "rule": "SPACING-004",
+          "expect": "fail",
+          "why": "超过 max_content_width 1200"
+        }
+      ]
+    },
+    {
+      "id": "E014",
+      "doc": "# 搜索框\n\n**图标与文字间距**：图标与文字间距图标与文字的间距为 12px，点击区高度 44px。\n",
+      "points": [
+        {
+          "keywords": [
+            "图标与文字间距",
+            "图标与文字的"
+          ],
+          "rule": "SPACING-005",
+          "expect": "pass",
+          "why": "12 是 4 的倍数，44 ≥ min_touch_target 40"
+        }
+      ]
+    },
+    {
+      "id": "E015",
+      "doc": "# 搜索框\n\n## 规格\n\n图标与文字间距：图标与文字间距图标与文字的间距为 10px。\n",
+      "points": [
+        {
+          "keywords": [
+            "图标与文字间距",
+            "图标与文字的"
+          ],
+          "rule": "SPACING-005",
+          "expect": "fail",
+          "why": "10 不是 4 的倍数"
+        }
+      ]
+    },
+    {
+      "id": "E016",
+      "doc": "# 标签按钮\n\n**按钮高度**：按钮高度按钮高度为 32px。\n",
+      "points": [
+        {
+          "keywords": [
+            "按钮高度",
+            "按钮高度为 "
+          ],
+          "rule": "SPACING-005",
+          "expect": "fail",
+          "why": "32 < min_touch_target 40"
+        }
+      ]
+    },
+    {
+      "id": "E017",
+      "doc": "# 正文文本\n\n## 规格\n\n文字对比度：文字对比度正文文字与背景对比度 4.5:1。\n",
+      "points": [
+        {
+          "keywords": [
+            "文字对比度",
+            "正文文字与背"
+          ],
+          "rule": "COLOR-001",
+          "expect": "pass",
+          "why": "4.5 ≥ 4.5 门槛"
+        }
+      ]
+    },
+    {
+      "id": "E018",
+      "doc": "# 正文文本\n\n**文字对比度**：文字对比度正文文字与背景对比度 3.8:1。\n",
+      "points": [
+        {
+          "keywords": [
+            "文字对比度",
+            "正文文字与背"
+          ],
+          "rule": "COLOR-001",
+          "expect": "fail",
+          "why": "3.8 < 4.5"
+        }
+      ]
+    },
+    {
+      "id": "E019",
+      "doc": "# 正文文本\n\n## 规格\n\n文字对比度：文字对比度正文文字与背景对比度 7.2:1。\n",
+      "points": [
+        {
+          "keywords": [
+            "文字对比度",
+            "正文文字与背"
+          ],
+          "rule": "COLOR-001",
+          "expect": "pass",
+          "why": "7.2 ≥ 4.5"
+        }
+      ]
+    },
+    {
+      "id": "E020",
+      "doc": "# 数据大屏主指标\n\n**对比度**：对比度字号 32px 的主指标对比度 3.5:1。\n",
+      "points": [
+        {
+          "keywords": [
+            "对比度",
+            "字号 32p"
+          ],
+          "rule": "COLOR-002",
+          "expect": "pass",
+          "why": "32px ≥ 18px 属大号文字，3.5 ≥ 3"
+        }
+      ]
+    },
+    {
+      "id": "E021",
+      "doc": "# 数据大屏主指标\n\n## 规格\n\n对比度：对比度字号 32px 的主指标对比度 2.4:1。\n",
+      "points": [
+        {
+          "keywords": [
+            "对比度",
+            "字号 32p"
+          ],
+          "rule": "COLOR-002",
+          "expect": "fail",
+          "why": "大号文字门槛 3:1，2.4 < 3"
+        }
+      ]
+    },
+    {
+      "id": "E022",
+      "doc": "# 卡片标题\n\n**对比度**：对比度字号 14px 且字重 600 的标题对比度 3.1:1。\n",
+      "points": [
+        {
+          "keywords": [
+            "对比度",
+            "字号 14p"
+          ],
+          "rule": "COLOR-002",
+          "expect": "pass",
+          "why": "14px+600 属大号文字，3.1 ≥ 3"
+        }
+      ]
+    },
+    {
+      "id": "E023",
+      "doc": "# 分隔线\n\n## 规格\n\n颜色引用：颜色引用颜色引用 color-border-subtle 语义令牌。\n",
+      "points": [
+        {
+          "keywords": [
+            "颜色引用",
+            "颜色引用 c"
+          ],
+          "rule": "COLOR-003",
+          "expect": "pass",
+          "why": "使用语义 token，符合"
+        }
+      ]
+    },
+    {
+      "id": "E024",
+      "doc": "# 分隔线\n\n**颜色引用**：颜色引用颜色引用 gray-300 色阶变量。\n",
+      "points": [
+        {
+          "keywords": [
+            "颜色引用",
+            "颜色引用 g"
+          ],
+          "rule": "COLOR-003",
+          "expect": "fail",
+          "why": "gray-300 是原始色值变量，禁止直接引用"
+        }
+      ]
+    },
+    {
+      "id": "E025",
+      "doc": "# 卡片背景\n\n## 规格\n\n颜色引用：颜色引用背景色硬编码为 #F5F7FA。\n",
+      "points": [
+        {
+          "keywords": [
+            "颜色引用",
+            "背景色硬编码"
+          ],
+          "rule": "COLOR-003",
+          "expect": "fail",
+          "why": "硬编码十六进制色值，禁止"
+        }
+      ]
+    },
+    {
+      "id": "E026",
+      "doc": "# 提示条\n\n**语义色类别**：语义色类别使用 info 语义色表示一般提示。\n",
+      "points": [
+        {
+          "keywords": [
+            "语义色类别",
+            "使用 inf"
+          ],
+          "rule": "COLOR-004",
+          "expect": "pass",
+          "why": "info 属于允许的六类语义色"
+        }
+      ]
+    },
+    {
+      "id": "E027",
+      "doc": "# 提示条\n\n## 规格\n\n语义色类别：语义色类别使用 brand 作为额外语义色类别。\n",
+      "points": [
+        {
+          "keywords": [
+            "语义色类别",
+            "使用 bra"
+          ],
+          "rule": "COLOR-004",
+          "expect": "fail",
+          "why": "允许的语义色只有六类，brand 不在其中"
+        }
+      ]
+    },
+    {
+      "id": "E028",
+      "doc": "# 活动角标\n\n**状态色**：状态色活动角标使用 warning 黄色作为装饰底色。\n",
+      "points": [
+        {
+          "keywords": [
+            "状态色",
+            "活动角标使用"
+          ],
+          "rule": "COLOR-005",
+          "expect": "fail",
+          "why": "状态色不得用于非状态语义的装饰"
+        }
+      ]
+    },
+    {
+      "id": "E029",
+      "doc": "# 表单校验\n\n## 规格\n\n状态色：状态色校验失败提示使用 danger 红色。\n",
+      "points": [
+        {
+          "keywords": [
+            "状态色",
+            "校验失败提示"
+          ],
+          "rule": "COLOR-005",
+          "expect": "pass",
+          "why": "danger 用于错误状态语义，合规"
+        }
+      ]
+    },
+    {
+      "id": "E030",
+      "doc": "# 文章正文\n\n**字号**：字号正文使用 14px。\n",
+      "points": [
+        {
+          "keywords": [
+            "字号",
+            "正文使用 1"
+          ],
+          "rule": "TYPO-001",
+          "expect": "pass",
+          "why": "14 在 allowed {12,14,16,20,24,32}"
+        }
+      ]
+    },
+    {
+      "id": "E031",
+      "doc": "# 区块标题\n\n## 规格\n\n字号：字号区块标题使用 20px。\n",
+      "points": [
+        {
+          "keywords": [
+            "字号",
+            "区块标题使用"
+          ],
+          "rule": "TYPO-001",
+          "expect": "pass",
+          "why": "20 在 allowed 且用于标题档"
+        }
+      ]
+    },
+    {
+      "id": "E032",
+      "doc": "# 区块标题\n\n**字号**：字号区块标题使用 22px。\n",
+      "points": [
+        {
+          "keywords": [
+            "字号",
+            "区块标题使用"
+          ],
+          "rule": "TYPO-001",
+          "expect": "fail",
+          "why": "22 不在 allowed 六档内"
+        }
+      ]
+    },
+    {
+      "id": "E033",
+      "doc": "# 辅助文字\n\n## 规格\n\n字号：字号辅助文字使用 13px。\n",
+      "points": [
+        {
+          "keywords": [
+            "字号",
+            "辅助文字使用"
+          ],
+          "rule": "TYPO-001",
+          "expect": "fail",
+          "why": "13 不在 allowed 六档内"
+        }
+      ]
+    },
+    {
+      "id": "E034",
+      "doc": "# 段落正文\n\n**行高**：行高字号 16px，行高 24px。\n",
+      "points": [
+        {
+          "keywords": [
+            "行高",
+            "字号 16p"
+          ],
+          "rule": "TYPO-002",
+          "expect": "pass",
+          "why": "24 / 16 = 1.5，严格等于"
+        }
+      ]
+    },
+    {
+      "id": "E035",
+      "doc": "# 展示型标题\n\n## 规格\n\n行高：行高字号 32px，行高 48px。\n",
+      "points": [
+        {
+          "keywords": [
+            "行高",
+            "字号 32p"
+          ],
+          "rule": "TYPO-002",
+          "expect": "pass",
+          "why": "48 / 32 = 1.5，严格等于"
+        }
+      ]
+    },
+    {
+      "id": "E036",
+      "doc": "# 段落正文\n\n**行高**：行高字号 16px，行高 20px。\n",
+      "points": [
+        {
+          "keywords": [
+            "行高",
+            "字号 16p"
+          ],
+          "rule": "TYPO-002",
+          "expect": "fail",
+          "why": "20 / 16 = 1.25，不等于 1.5"
+        }
+      ]
+    },
+    {
+      "id": "E037",
+      "doc": "# 区块标题\n\n## 规格\n\n行高：行高字号 20px，行高 34px。\n",
+      "points": [
+        {
+          "keywords": [
+            "行高",
+            "字号 20p"
+          ],
+          "rule": "TYPO-002",
+          "expect": "fail",
+          "why": "34 / 20 = 1.7，不等于 1.5"
+        }
+      ]
+    },
+    {
+      "id": "E038",
+      "doc": "# 正文文本\n\n**字重**：字重正文使用 400 字重。\n",
+      "points": [
+        {
+          "keywords": [
+            "字重",
+            "正文使用 4"
+          ],
+          "rule": "TYPO-003",
+          "expect": "pass",
+          "why": "400 在允许范围且正文不低于 400"
+        }
+      ]
+    },
+    {
+      "id": "E039",
+      "doc": "# 区块标题\n\n## 规格\n\n字重：字重标题使用 600 字重。\n",
+      "points": [
+        {
+          "keywords": [
+            "字重",
+            "标题使用 6"
+          ],
+          "rule": "TYPO-003",
+          "expect": "pass",
+          "why": "600 在允许范围且标题不高于 600"
+        }
+      ]
+    },
+    {
+      "id": "E040",
+      "doc": "# 区块标题\n\n**字重**：字重标题使用 700 字重。\n",
+      "points": [
+        {
+          "keywords": [
+            "字重",
+            "标题使用 7"
+          ],
+          "rule": "TYPO-003",
+          "expect": "fail",
+          "why": "700 超出自重上限 600"
+        }
+      ]
+    },
+    {
+      "id": "E041",
+      "doc": "# 正文文本\n\n## 规格\n\n字重：字重正文使用 200 字重。\n",
+      "points": [
+        {
+          "keywords": [
+            "字重",
+            "正文使用 2"
+          ],
+          "rule": "TYPO-003",
+          "expect": "fail",
+          "why": "200 低于正文下限 400"
+        }
+      ]
+    },
+    {
+      "id": "E042",
+      "doc": "# 列表项\n\n**正文默认字号**：正文默认字号正文默认字号为 14px。\n",
+      "points": [
+        {
+          "keywords": [
+            "正文默认字号"
+          ],
+          "rule": "TYPO-004",
+          "expect": "pass",
+          "why": "等于规定的 14"
+        }
+      ]
+    },
+    {
+      "id": "E043",
+      "doc": "# 列表项\n\n## 规格\n\n正文默认字号：正文默认字号正文默认字号为 12px。\n",
+      "points": [
+        {
+          "keywords": [
+            "正文默认字号"
+          ],
+          "rule": "TYPO-004",
+          "expect": "fail",
+          "why": "不等于规定的 14"
+        }
+      ]
+    },
+    {
+      "id": "E044",
+      "doc": "# 抽屉组件 Drawer\n\n**属性声明**：属性声明同时显式声明了 size 与 variant。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性声明",
+            "同时显式声明"
+          ],
+          "rule": "COMP-001",
+          "expect": "pass",
+          "why": "两者均已显式声明"
+        }
+      ]
+    },
+    {
+      "id": "E045",
+      "doc": "# 抽屉组件 Drawer\n\n## 规格\n\n属性声明：属性声明声明了 size，但未声明 variant。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性声明",
+            "声明了 si"
+          ],
+          "rule": "COMP-001",
+          "expect": "fail",
+          "why": "缺 variant，二者必须同时声明"
+        }
+      ]
+    },
+    {
+      "id": "E046",
+      "doc": "# 输入框 TextField\n\n**属性名**：属性名属性名使用 placeholderText。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性名",
+            "属性名使用 "
+          ],
+          "rule": "COMP-002",
+          "expect": "pass",
+          "why": "camelCase 合规"
+        }
+      ]
+    },
+    {
+      "id": "E047",
+      "doc": "# 输入框 TextField\n\n## 规格\n\n属性名：属性名属性名使用 placeholder_text。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性名",
+            "属性名使用 "
+          ],
+          "rule": "COMP-002",
+          "expect": "fail",
+          "why": "下划线写法不符合 camelCase"
+        }
+      ]
+    },
+    {
+      "id": "E048",
+      "doc": "# 输入框 TextField\n\n**属性名**：属性名属性名使用 placeholder-text。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性名",
+            "属性名使用 "
+          ],
+          "rule": "COMP-002",
+          "expect": "fail",
+          "why": "kebab-case 明确禁止"
+        }
+      ]
+    },
+    {
+      "id": "E049",
+      "doc": "# 卡片 Card\n\n## 规格\n\n布尔属性：布尔属性布尔属性使用 hasIcon。\n",
+      "points": [
+        {
+          "keywords": [
+            "布尔属性",
+            "布尔属性使用"
+          ],
+          "rule": "COMP-003",
+          "expect": "pass",
+          "why": "以 has 开头，合规"
+        }
+      ]
+    },
+    {
+      "id": "E050",
+      "doc": "# 弹窗 Modal\n\n**布尔属性**：布尔属性布尔属性使用 canClose。\n",
+      "points": [
+        {
+          "keywords": [
+            "布尔属性",
+            "布尔属性使用"
+          ],
+          "rule": "COMP-003",
+          "expect": "pass",
+          "why": "以 can 开头，合规"
+        }
+      ]
+    },
+    {
+      "id": "E051",
+      "doc": "# 卡片 Card\n\n## 规格\n\n布尔属性：布尔属性布尔属性使用 showIcon。\n",
+      "points": [
+        {
+          "keywords": [
+            "布尔属性",
+            "布尔属性使用"
+          ],
+          "rule": "COMP-003",
+          "expect": "fail",
+          "why": "缺 is/has/can 前缀"
+        }
+      ]
+    },
+    {
+      "id": "E052",
+      "doc": "# 标签 Tag\n\n**属性默认值**：属性默认值size 默认 medium，variant 默认 primary。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性默认值",
+            "size 默"
+          ],
+          "rule": "COMP-004",
+          "expect": "pass",
+          "why": "两个必填属性均有默认值"
+        }
+      ]
+    },
+    {
+      "id": "E053",
+      "doc": "# 标签 Tag\n\n## 规格\n\n属性默认值：属性默认值为 variant 设置了默认值，但 size 无默认值。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性默认值",
+            "size",
+            "为 vari"
+          ],
+          "rule": "COMP-004",
+          "expect": "fail",
+          "why": "size 缺默认值"
+        }
+      ]
+    },
+    {
+      "id": "E054",
+      "doc": "# 按钮 Button\n\n**变体取值**：变体取值variant 取值使用 ghost。\n",
+      "points": [
+        {
+          "keywords": [
+            "变体取值",
+            "varian"
+          ],
+          "rule": "COMP-005",
+          "expect": "pass",
+          "why": "ghost 在 allowed 四类中"
+        }
+      ]
+    },
+    {
+      "id": "E055",
+      "doc": "# 按钮 Button\n\n## 规格\n\n变体取值：变体取值variant 取值使用 outline。\n",
+      "points": [
+        {
+          "keywords": [
+            "变体取值",
+            "varian"
+          ],
+          "rule": "COMP-005",
+          "expect": "fail",
+          "why": "outline 不在 allowed 四类中"
+        }
+      ]
+    },
+    {
+      "id": "E056",
+      "doc": "# 按钮图层\n\n**图层命名**：图层命名图层命名为 Button/Primary/Disabled。\n",
+      "points": [
+        {
+          "keywords": [
+            "图层命名",
+            "图层命名为 "
+          ],
+          "rule": "NAME-001",
+          "expect": "pass",
+          "why": "符合「组件名/修饰/状态」格式"
+        }
+      ]
+    },
+    {
+      "id": "E057",
+      "doc": "# 按钮图层\n\n## 规格\n\n图层命名：图层命名图层命名为 Button Primary Disabled。\n",
+      "points": [
+        {
+          "keywords": [
+            "图层命名",
+            "图层命名为 "
+          ],
+          "rule": "NAME-001",
+          "expect": "fail",
+          "why": "未使用斜杠分层"
+        }
+      ]
+    },
+    {
+      "id": "E058",
+      "doc": "# 表格组件\n\n**组件命名**：组件命名组件命名为 DataTable。\n",
+      "points": [
+        {
+          "keywords": [
+            "组件命名",
+            "组件命名为 "
+          ],
+          "rule": "NAME-002",
+          "expect": "pass",
+          "why": "PascalCase 合规"
+        }
+      ]
+    },
+    {
+      "id": "E059",
+      "doc": "# 表格组件\n\n## 规格\n\n组件命名：组件命名组件命名为 dataTable。\n",
+      "points": [
+        {
+          "keywords": [
+            "组件命名",
+            "组件命名为 "
+          ],
+          "rule": "NAME-002",
+          "expect": "fail",
+          "why": "首字母未大写，不符合 PascalCase"
+        }
+      ]
+    },
+    {
+      "id": "E060",
+      "doc": "# 图标图层\n\n**图层名称**：图层名称图层名称仍为 Rectangle 45。\n",
+      "points": [
+        {
+          "keywords": [
+            "图层名称",
+            "图层名称仍为"
+          ],
+          "rule": "NAME-003",
+          "expect": "fail",
+          "why": "Rectangle 45 是自动生成的默认名称"
+        }
+      ]
+    },
+    {
+      "id": "E061",
+      "doc": "# 图标图层\n\n## 规格\n\n图层名称：图层名称图层名称已改为 Icon/Search/Default。\n",
+      "points": [
+        {
+          "keywords": [
+            "图层名称",
+            "图层名称已改"
+          ],
+          "rule": "NAME-003",
+          "expect": "pass",
+          "why": "已重命名为语义化格式"
+        }
+      ]
+    },
+    {
+      "id": "E062",
+      "doc": "# 间距令牌\n\n**令牌命名**：令牌命名间距令牌命名为 space-card-padding。\n",
+      "points": [
+        {
+          "keywords": [
+            "令牌命名",
+            "间距令牌命名"
+          ],
+          "rule": "NAME-004",
+          "expect": "pass",
+          "why": "kebab-case 三段式合规"
+        }
+      ]
+    },
+    {
+      "id": "E063",
+      "doc": "# 间距令牌\n\n## 规格\n\n令牌命名：令牌命名间距令牌命名为 space_card_padding。\n",
+      "points": [
+        {
+          "keywords": [
+            "令牌命名",
+            "间距令牌命名"
+          ],
+          "rule": "NAME-004",
+          "expect": "fail",
+          "why": "下划线不符合 kebab-case"
+        }
+      ]
+    },
+    {
+      "id": "E064",
+      "doc": "# 全屏播放页\n\n**卡片内边距**：卡片内边距全屏沉浸式视图内卡片内边距使用 8px。\n",
+      "points": [
+        {
+          "keywords": [
+            "卡片内边距",
+            "全屏沉浸式视"
+          ],
+          "rule": "SPACING-001 例外",
+          "expect": "pass",
+          "why": "SPACING-001 例外：全屏沉浸式视图内的卡片不受此限制"
+        }
+      ]
+    },
+    {
+      "id": "E065",
+      "doc": "# 全出血横幅\n\n## 规格\n\n页面外边距：页面外边距全出血横幅左右外边距为 0。\n",
+      "points": [
+        {
+          "keywords": [
+            "页面外边距",
+            "全出血横幅左"
+          ],
+          "rule": "SPACING-004 例外",
+          "expect": "pass",
+          "why": "SPACING-004 例外：全出血横幅与背景图不受外边距限制"
+        }
+      ]
+    },
+    {
+      "id": "E066",
+      "doc": "# 分割线 Divider\n\n**属性声明**：属性声明分割线 Divider 未声明 size 与 variant。\n",
+      "points": [
+        {
+          "keywords": [
+            "属性声明",
+            "分割线 Di"
+          ],
+          "rule": "COMP-001 例外",
+          "expect": "pass",
+          "why": "COMP-001 例外：纯布局容器（Container / Divider）不声明"
+        }
+      ]
+    },
+    {
+      "id": "E067",
+      "doc": "# 按钮标签\n\n## 规格\n\n行高：行高按钮单行标签未设置 1.5 倍行高。\n",
+      "points": [
+        {
+          "keywords": [
+            "行高",
+            "按钮单行标签"
+          ],
+          "rule": "TYPO-002 例外",
+          "expect": "pass",
+          "why": "TYPO-002 例外：单行文本（按钮标签、徽标、表格单元格）不参与行高倍数校验"
+        }
+      ]
+    },
+    {
+      "id": "E068",
+      "doc": "# 草稿画板\n\n**图层命名**：图层命名一次性草稿画板内图层沿用任意命名。\n",
+      "points": [
+        {
+          "keywords": [
+            "图层命名",
+            "一次性草稿画"
+          ],
+          "rule": "NAME-001 例外",
+          "expect": "pass",
+          "why": "NAME-001 例外：一次性草稿画板（Draft / Scratch）内的图层不受此限制"
+        }
+      ]
+    },
+    {
+      "id": "E069",
+      "doc": "# 历史图层\n\n## 规格\n\n图层名称：图层名称已标记废弃且不参与交付的历史图层仍为 Group 7。\n",
+      "points": [
+        {
+          "keywords": [
+            "图层名称",
+            "已标记废弃且"
+          ],
+          "rule": "NAME-003 例外",
+          "expect": "pass",
+          "why": "NAME-003 例外：明确标记为废弃且不参与交付的历史图层"
+        }
+      ]
+    },
+    {
+      "id": "E070",
+      "doc": "# 品牌标识\n\n**颜色引用**：颜色引用品牌 Logo 位图内部使用多种原始色值。\n",
+      "points": [
+        {
+          "keywords": [
+            "颜色引用",
+            "品牌 Log"
+          ],
+          "rule": "COLOR-003 例外",
+          "expect": "pass",
+          "why": "COLOR-003 例外：品牌 Logo、插画与位图资源内部的多色取值不受此限制"
+        }
+      ]
+    },
+    {
+      "id": "E071",
+      "doc": "# 卡片视觉\n\n## 规格\n\n圆角：圆角卡片圆角使用 6px。\n",
+      "points": [
+        {
+          "keywords": [
+            "圆角",
+            "卡片圆角使用"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库无任何圆角规则"
+        }
+      ]
+    },
+    {
+      "id": "E072",
+      "doc": "# 阴影层级\n\n**投影**：投影卡片投影使用 0 2px 8px。\n",
+      "points": [
+        {
+          "keywords": [
+            "投影",
+            "卡片投影使用"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库无投影规范"
+        }
+      ]
+    },
+    {
+      "id": "E073",
+      "doc": "# 过渡动效\n\n## 规格\n\n动效时长：动效时长侧边栏滑入动效时长 250ms。\n",
+      "points": [
+        {
+          "keywords": [
+            "动效时长",
+            "侧边栏滑入动"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库无动效时长规范"
+        }
+      ]
+    },
+    {
+      "id": "E074",
+      "doc": "# 空状态\n\n**插画尺寸**：插画尺寸空状态插画尺寸为 240px。\n",
+      "points": [
+        {
+          "keywords": [
+            "插画尺寸",
+            "空状态插画尺"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库无插画尺寸规范"
+        }
+      ]
+    },
+    {
+      "id": "E075",
+      "doc": "# 字体族\n\n## 规格\n\n字体：字体界面字体族使用 Inter。\n",
+      "points": [
+        {
+          "keywords": [
+            "字体",
+            "界面字体族使"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库无字体族规范"
+        }
+      ]
+    },
+    {
+      "id": "E076",
+      "doc": "# 图标\n\n**图标尺寸**：图标尺寸图标尺寸使用 20px。\n",
+      "points": [
+        {
+          "keywords": [
+            "图标尺寸",
+            "图标尺寸使用"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库无图标尺寸规范"
+        }
+      ]
+    },
+    {
+      "id": "E077",
+      "doc": "# 表格行内边距\n\n## 规格\n\n行内边距：行内边距表格行内边距使用 8px。\n",
+      "points": [
+        {
+          "keywords": [
+            "行内边距",
+            "表格行内边距"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "术语与卡片内边距重叠，但对象不同，无适用规则"
+        }
+      ]
+    },
+    {
+      "id": "E078",
+      "doc": "# 表格表头间距\n\n**表头间距**：表头间距表头与首行间距使用 12px。\n",
+      "points": [
+        {
+          "keywords": [
+            "表头间距",
+            "表头与首行间"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "SPACING-002 只管卡片间距，无表格表头间距"
+        }
+      ]
+    },
+    {
+      "id": "E079",
+      "doc": "# 卡片边框宽度\n\n## 规格\n\n边框宽度：边框宽度卡片边框宽度使用 1px。\n",
+      "points": [
+        {
+          "keywords": [
+            "边框宽度",
+            "卡片边框宽度"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库无描边宽度规范"
+        }
+      ]
+    },
+    {
+      "id": "E080",
+      "doc": "# 无障碍标签\n\n**无障碍标签**：无障碍标签所有图标按钮需提供无障碍标签。\n",
+      "points": [
+        {
+          "keywords": [
+            "无障碍标签",
+            "所有图标按钮"
+          ],
+          "rule": "(无覆盖)",
+          "expect": "uncertain",
+          "why": "知识库无无障碍标签规范"
+        }
+      ]
+    }
+  ]
+}

@@ -196,17 +196,19 @@ def t_field_weight_equivalence() -> str:
 
 # ---------------------------------------------------------------- 9
 def t_generation_set() -> str:
-    from src.chunking import load_sections
-
-    data = json.loads((ROOT / "eval" / "generation_set.json").read_text(encoding="utf-8"))
-    cases = data["cases"]
+    """校验手写集 + 生成集两份评测数据。"""
+    cases: list[dict] = []
+    files = []
+    for name in ("generation_set.json", "generation_set_expanded.json"):
+        p = ROOT / "eval" / name
+        if not p.exists():
+            continue
+        files.append(name)
+        cases.extend(json.loads(p.read_text(encoding="utf-8"))["cases"])
     assert cases, "生成层评测集为空"
     ids = [c["id"] for c in cases]
-    assert len(ids) == len(set(ids)), "文档 id 重复"
-
-    known = {s.section_id for s in load_sections()}
-    rules = {x for x in known if not x.startswith("CASE")}
-    all_rules = {s.section_id for s in load_sections() if not s.section_id.startswith("CASE")}
+    assert len(ids) == len(set(ids)), f"文档 id 重复：{len(ids)} vs {len(set(ids))}"
+    assert len(files) == 2, f"应同时存在手写集与生成集，实际只有 {files}"
 
     n_points = 0
     errs: list[str] = []
@@ -215,7 +217,6 @@ def t_generation_set() -> str:
         assert c.get("points"), f"{c['id']} 无判定点"
         for p in c["points"]:
             n_points += 1
-            # 每个点必须有可匹配的关键词与推导依据
             kws = p.get("keywords") or ([p["keyword"]] if p.get("keyword") else [])
             if not kws:
                 errs.append(f"{c['id']} 判定点缺 keyword/keywords")
@@ -232,12 +233,17 @@ def t_generation_set() -> str:
     assert covered_prefix == {"SPACING", "COLOR", "TYPO", "COMP", "NAME"}, \
         f"规则类别覆盖不全：{sorted(covered_prefix)}"
 
-    # 三类场景都要有
+    # 三类期望都要有
     expects = {p["expect"] for c in cases for p in c["points"]}
     assert expects == {"pass", "fail", "uncertain"}, f"期望值种类不全：{sorted(expects)}"
+    # 降级场景必须存在
+    rules_joined = " ".join(p.get("rule", "") for c in cases for p in c["points"])
+    assert "例外" in rules_joined, "缺少排除型（例外）用例"
+    assert "(无覆盖)" in rules_joined, "缺少无覆盖用例"
 
     assert not errs, str(errs[:3])
-    return f"{len(cases)} 文档 / {n_points} 判定点 / 5 类规则 + 3 种期望"
+    assert n_points >= 100, f"判定点仅 {n_points}，目标 100+"
+    return f"{len(cases)} 文档 / {n_points} 判定点（手写+生成）"
 
 
 def main() -> int:

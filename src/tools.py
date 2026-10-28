@@ -188,7 +188,7 @@ def search_spec_verified(
     top_k: int = 2,
     min_relevance: int = 2,
     funnel: int = 10,
-    max_judge: int = 5,
+    max_judge: int = 10,
 ) -> str:
     """BM25 粗排 + LLM 相关性闸门 + 拒绝原因分类。
 
@@ -199,8 +199,8 @@ def search_spec_verified(
       3. found=false + no_coverage → 知识库确实无法判定 → 才判 uncertain
                      / not_applicable
 
-    ⚠️ `max_judge` 的历史教训（不要改回 2）
-    ---------------------------------------
+    ⚠️ `max_judge` 的历史教训（不要改小）
+    --------------------------------------
     最初只对 top-2 做相关性判定以省成本，结果「通用规则 + 特定子对象」的查询
     被系统性误拒。实测（eval/probe_general_rule.py）：
 
@@ -208,18 +208,23 @@ def search_spec_verified(
           rank 1  CASE-005  → relevance 1（案例讲背景色）
           rank 2  NAME-004  → relevance 1（只讲令牌命名）
           rank 3  COLOR-003 → relevance 3 ← 判对了，但根本没被送去判定
-          rank 4  COLOR-003 → relevance 3 ← 同上
 
-        查询「辅助注释文字允许哪些字重」
-          rank 2  TYPO-003 → relevance 1
-          rank 5  TYPO-003 → relevance 2 ← 判对了，但被截断
+    提到 5 之后又有三例因 gold 落在第 6/8/10 名而误拒（eval/generation_set_expanded）：
 
-    也就是说：**判定器一直是对的，是我的截断让它看不到该看的规则。**
-    这类错误伪装成"判定器不够好"，很容易诱导人去改提示词（改错方向）。
+        文章正文字号   → TYPO-001 排第 10
+        placeholder 命名 → COMP-002 排第 8
+        分隔线颜色令牌  → COLOR-003 排第 6
 
-    现在放宽到 max_judge=5，但用**早期退出**控制成本：
-    一旦拿到一个 3 分命中（明确适用），或已累计 2 个命中，就不再往下判。
-    简单查询通常 1-2 次判定（不比原来贵），难题才付到 5 次。
+    所以放宽到 10（funnel 也是 10，即全部候选都判）。**真正的瓶颈是 BM25 排序质量**：
+    通用规则在长查询下常被具体条目挤到第 6-10 名，判定范围只能跟着放宽。
+
+    代价控制靠**早期退出**：一旦拿到 3 分命中（明确适用），或已累计 2 个命中就停。
+    简单查询仍然只判 1-2 次。
+
+    ⚠️ 扩大判定范围的已知风险：无覆盖的查询也会多看几个候选，
+    更容易撞上一个"看起来沾边"的条目而造成过度自信（幻觉）。
+    每次调整后都必须同时验证 `no_coverage` 一组没有退化 —— 见
+    eval/generation_report.md 的分层指标。
     """
     from .relevance import classify_rejection, score_relevance
 
