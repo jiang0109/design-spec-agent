@@ -246,6 +246,15 @@ def t_generation_set() -> str:
     return f"{len(cases)} 文档 / {n_points} 判定点（手写+生成）"
 
 
+def t_rule_engine() -> str:
+    """规则引擎单元测试（纯确定性，零 API）。"""
+    from eval.test_rule_engine import main as re_main
+
+    rc = re_main()
+    assert rc == 0, "规则引擎单元测试未通过"
+    return "全部断言通过"
+
+
 def main() -> int:
     print("=" * 74)
     print("冒烟测试（离线不变量，零 API 调用）")
@@ -260,6 +269,7 @@ def main() -> int:
     check("7 检索基线未退化", t_retrieval_baseline)
     check("8 字段加权等价性", t_field_weight_equivalence)
     check("9 生成层评测集结构", t_generation_set)
+    check("10 规则引擎单元测试", t_rule_engine)
 
     print()
     print("=" * 74)
