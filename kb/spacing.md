@@ -116,7 +116,8 @@ rules:
       step: 4
       min_touch_target: 40
     applies_when:
-      - 组件由两个及以上内部元素构成
+      - 组件由两个及以上内部元素构成（用于判定内部元素间距取值）
+      - 评估可点击元素的高度时（按钮、图标按钮、可点击行等）
     exceptions:
       - 纯装饰性分隔线不参与间距计算
     positive_case:
