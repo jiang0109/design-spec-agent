@@ -255,6 +255,24 @@ def t_rule_engine() -> str:
     return "全部断言通过"
 
 
+def t_hybrid_routing() -> str:
+    """混合判定的离线路由 + 引擎断言（零 API）。"""
+    from eval.probe_hybrid import OFFLINE
+    from src.claim_extractor import Claim, route
+    from src.hybrid import judge_claim
+    from src.rule_engine import RuleEngine
+
+    engine = RuleEngine()
+    bad: list[str] = []
+    for desc, attr, claim, want_rule, want_verdict in OFFLINE:
+        rid, _, _ = route(attr, claim)
+        j = judge_claim(Claim(desc, attr, claim), engine)
+        if rid != want_rule or j.verdict != want_verdict:
+            bad.append(f"{desc}: rule {rid}(期望 {want_rule}) verdict {j.verdict}(期望 {want_verdict})")
+    assert not bad, "; ".join(bad[:3])
+    return f"{len(OFFLINE)} 条路由+判定断言"
+
+
 def main() -> int:
     print("=" * 74)
     print("冒烟测试（离线不变量，零 API 调用）")
@@ -270,6 +288,7 @@ def main() -> int:
     check("8 字段加权等价性", t_field_weight_equivalence)
     check("9 生成层评测集结构", t_generation_set)
     check("10 规则引擎单元测试", t_rule_engine)
+    check("11 混合判定路由", t_hybrid_routing)
 
     print()
     print("=" * 74)
