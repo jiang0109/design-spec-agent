@@ -432,7 +432,10 @@ class RuleEngine:
         #    用 `forbidden_examples` 字段作为方向信号 —— 它是"这类写法不允许"的明示。
         if "pattern" in p and isinstance(p["pattern"], str):
             text = claim.get("name", claim.get("value"))
-            if isinstance(text, str):
+            # 抽取值是 "unknown" 时不要判定：那不是"不合规"，是"没抽到"。
+            # 实测漏掉这个守卫会把「品牌 Logo 位图内部使用多种原始色值」
+            # 判成 fail（拿字符串 "unknown" 去匹配正则），而它本该回落。
+            if isinstance(text, str) and text.strip() and text.strip().lower() != "unknown":
                 forbidden_form = "forbidden_examples" in p
                 try:
                     hit = bool(re.search(p["pattern"], text))
@@ -455,7 +458,7 @@ class RuleEngine:
         # 8b) 正则（必须匹配 + 禁止匹配，如 COLOR-003 的语义 token）
         if ("required_pattern" in p or "forbidden_pattern" in p):
             text = claim.get("name", claim.get("value"))
-            if isinstance(text, str):
+            if isinstance(text, str) and text.strip() and text.strip().lower() != "unknown":
                 req = p.get("required_pattern")
                 forb = p.get("forbidden_pattern")
                 if isinstance(req, str):

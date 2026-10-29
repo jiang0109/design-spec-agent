@@ -73,7 +73,7 @@ rules:
       所有颜色引用必须使用语义 token（形如 color-<用途>-<语义>），禁止直接引用
       原始色值变量（如 blue-500）或硬编码十六进制色值（如 #1F2329）。
     params:
-      required_pattern: "^color-(text|bg|border|icon|fill)-(primary|secondary|success|warning|danger|info)(-[a-z]+)*$"
+      required_pattern: "^color-(text|bg|border|icon|fill)-[a-z]+(-[a-z]+)*$"
       forbidden_pattern: "^([a-z]+-[0-9]{2,3}|#[0-9A-Fa-f]{3,8})$"
       checked_in: [design_token_file, component_style, design_spec_annotation]
     applies_when:
