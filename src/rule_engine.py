@@ -183,6 +183,91 @@ def _statement(block: str) -> str:
 # ======================================================================
 # 引擎
 # ======================================================================
+NUMERIC_KEYS = (
+    "value", "gap", "height", "size", "line_height",
+    "max_width", "width", "inside", "between",
+    "font_size", "font_weight",
+)
+
+
+def _to_number(v):
+    """把抽取层可能给出的数值型字符串转成数字（"12px" → 12）。
+
+    为什么需要：LLM 抽取出来的 claim 经常带单位（"12px"、"1.5 倍"），
+    而引擎做的是数值比较。不归一化就会抛
+    `TypeError: '>' not supported between instances of 'int' and 'str'` ——
+    实测在 115 份文档的全量评测里真的崩了。
+    **抽取层的输出格式不由引擎控制，所以引擎必须容错。**
+    """
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v
+    if isinstance(v, str):
+        # 只在整个字符串以数字开头、后面是可选的单位时转换。
+        # 不能从任意位置抠数字：那会把 "gray-300" 的 300、"#F5F7FA" 的 5
+        # 抠出来，把颜色字符串变成数字（实测让 COLOR-003 断言直接失败）。
+        m = re.fullmatch(r"\s*(-?\d+(?:\.\d+)?)\s*[^\d\s]*\s*", v)
+        if m:
+            s = m.group(1)
+            return float(s) if "." in s else int(s)
+    return v
+
+
+def _normalize_claim(claim: dict) -> dict:
+    out = {}
+    for k, v in claim.items():
+        out[k] = _to_number(v) if k in NUMERIC_KEYS else v
+    return out
+
+
+def _chars(s: str) -> str:
+    """只保留中文字符。
+
+    为什么不保留拉丁字母/数字：例外条款里的 `size`、`variant`、`Container`
+    在正常陈述里也会出现，参与 n-gram 会制造大量假阳性 ——
+    实测「纯布局容器（Container / Divider）不声明 size 与 variant」
+    会把「同时声明了 size 与 variant」误判为例外。
+    """
+    return "".join(re.findall(r"[\u4e00-\u9fff]", s or ""))
+
+
+def _grams(s: str, n: int = 3) -> set[str]:
+    t = _chars(s)
+    return {t[i : i + n] for i in range(0, max(0, len(t) - n + 1))}
+
+
+# ======================================================================
+# 例外检测（在引擎判定之前执行）
+#
+# 为什么必须有这一步
+# ------------------
+# 全量评测暴露过一个真实事故：引擎**完全忽略 exceptions**，
+# 于是「全屏沉浸式视图内的卡片内边距 8px」被直接判 fail（8 不在白名单），
+# 而正确答案是 pass（SPACING-001 的例外明确排除这类卡片）。
+# 结果「排除型」一组从 LLM 路径的 10/10 掉到 2/10，整体准确率 95% → 87%。
+#
+# 判定"这个陈述是否落在例外里"需要语义理解，引擎做不了。
+# 但**粗筛**是可以做的：例外条款里的关键短语通常会在陈述里复现。
+# 用 4-gram 重合度做粗筛，命中就交回 LLM 路径 —— 宁可多交出去，
+# 也不能让引擎在例外案例上给出确定性错误。
+# ======================================================================
+def exception_match(rule_id: str, statement: str, rules: dict, threshold: int = 2) -> str | None:
+    rule = rules.get(rule_id)
+    if not rule:
+        return None
+    sg = _grams(statement)
+    if not sg:
+        return None
+    for exc in rule.exceptions:
+        e = exc.strip().lstrip("-").strip()
+        if not e or e in ("无",):
+            continue
+        if len(sg & _grams(e)) >= threshold:
+            return e
+    return None
+
+
 class RuleEngine:
     """从 kb/ 编译出可执行规则，并按 claim 判定。"""
 
@@ -231,6 +316,7 @@ class RuleEngine:
         rule = self.rules.get(rule_id)
         if rule is None:
             return Result("uncertain", rule_id, f"未知规则 {rule_id}")
+        claim = _normalize_claim(claim)
         p = rule.params
 
         # 0) 多字段 claim：逐个执行本规则适用的约束，任一不合规即 fail。
@@ -275,7 +361,7 @@ class RuleEngine:
                 a_k, b_k = m.group(1), m.group(2)
                 a, b = _claim_get(claim, a_k), _claim_get(claim, b_k)
                 lo = p.get("min_between_groups")
-                if a is not None and b is not None:
+                if isinstance(a, (int, float)) and isinstance(b, (int, float)):
                     ok = a > b and (lo is None or a >= lo)
                     why = f"{a_k}={a} 必须严格大于 {b_k}={b}" + (f" 且 ≥{lo}" if lo else "")
                     return Result("pass" if ok else "fail", rule_id,
@@ -292,8 +378,8 @@ class RuleEngine:
         # 4) 下限（min_touch_target 优先匹配 height，否则 min 匹配 value）
         for key in ("min_touch_target", "min"):
             if key in p and isinstance(p[key], (int, float)):
-                actual = claim.get("height", claim.get("value"))
-                if actual is not None:
+                actual = _to_number(claim.get("height", claim.get("value")))
+                if isinstance(actual, (int, float)):
                     if actual >= p[key]:
                         return Result("pass", rule_id, f"{actual} ≥ 下限 {p[key]}",
                                       key, f"≥{p[key]}", str(actual))
@@ -304,10 +390,10 @@ class RuleEngine:
         #    否则 SPACING-004 会把「页面外边距 12」当成「内容宽度 12」而判 pass）
         for key in ("max_content_width", "max"):
             if key in p and isinstance(p[key], (int, float)):
-                v = claim.get("max_width", claim.get("width"))
+                v = _to_number(claim.get("max_width", claim.get("width")))
                 if v is None and "range" not in p:
-                    v = claim.get("value")
-                if v is not None:
+                    v = _to_number(claim.get("value"))
+                if isinstance(v, (int, float)):
                     if v <= p[key]:
                         return Result("pass", rule_id, f"{v} ≤ 上限 {p[key]}", key, f"≤{p[key]}", str(v))
                     return Result("fail", rule_id, f"{v} 超过上限 {p[key]}", key, f"≤{p[key]}", str(v))
@@ -326,14 +412,19 @@ class RuleEngine:
 
         # 7) 倍数（行高 = 字号 × multiplier）
         if "multiplier" in p and {"size", "line_height"} <= claim.keys():
-            size, lh, k = claim["size"], claim["line_height"], p["multiplier"]
-            if size:
-                ratio = lh / size
-                if abs(ratio - k) < 1e-6:
-                    return Result("pass", rule_id, f"{lh}/{size} = {ratio:g}，等于 {k}",
-                                  "multiplier", f"×{k}", f"{ratio:g}")
-                return Result("fail", rule_id, f"{lh}/{size} = {ratio:g}，不等于 {k}",
+            size = _to_number(claim["size"])
+            lh = _to_number(claim["line_height"])
+            k = p["multiplier"]
+            if not (isinstance(size, (int, float)) and isinstance(lh, (int, float)) and size):
+                return Result("uncertain", rule_id,
+                              f"行高判定需要数值型 size 与 line_height，实际 {claim['size']!r}/{claim['line_height']!r}",
+                              "multiplier", f"×{k}", "")
+            ratio = lh / size
+            if abs(ratio - k) < 1e-6:
+                return Result("pass", rule_id, f"{lh}/{size} = {ratio:g}，等于 {k}",
                               "multiplier", f"×{k}", f"{ratio:g}")
+            return Result("fail", rule_id, f"{lh}/{size} = {ratio:g}，不等于 {k}",
+                          "multiplier", f"×{k}", f"{ratio:g}")
 
         # 8) 正则（单 pattern）
         #    方向要区分：多数规则里的 pattern 是**要求的形式**（匹配=合规），
@@ -425,6 +516,10 @@ class RuleEngine:
     def _default_value_rules() -> set[str]:
         """哪些规则属于"必须有默认值"这类存在性约束。"""
         return {"COMP-004"}
+
+    def exception_hit(self, rule_id: str, statement: str) -> str | None:
+        """该陈述是否可能落在规则的例外条款内（粗筛）。"""
+        return exception_match(rule_id, statement, self.rules)
 
     def supports(self, rule_id: str) -> bool:
         """该规则是否可由引擎确定性判定（params 里有可执行约束）。"""

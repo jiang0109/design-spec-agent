@@ -70,6 +70,8 @@ ATTRIBUTES: list[Attribute] = [
               "颜色用什么方式引用（语义 token / 色阶变量 / 十六进制）"),
     Attribute("语义色类别", "COLOR-004", '{"value": "语义色类别名"}',
               "语义色属于哪一类（primary/secondary/success/warning/danger/info）"),
+    Attribute("状态色用途", "COLOR-005", '{"value": "用于什么语义场景"}',
+              "状态色（success/warning/danger/info）被用在什么语义场景，是否属于该状态"),
     Attribute("字号", "TYPO-001", '{"value": 数值(px)}', "文字字号"),
     Attribute("行高", "TYPO-002", '{"size": 字号(px), "line_height": 行高(px)}',
               "行高，需要同时给出字号"),
