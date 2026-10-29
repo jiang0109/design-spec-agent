@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 for _s in (sys.stdout, sys.stderr):
@@ -191,10 +192,61 @@ def run_case(case: dict, verify: bool | None) -> dict:
     }
 
 
+def _run_case_cached(case: dict, verify: bool | None, resume: bool = True) -> dict:
+    """带"重试 + 断点续跑"的单份文档评测。
+
+    为什么需要
+    ----------
+    120 点全量评测要跑 14 分钟、上百次 API 调用。实测一次网络抖动
+    （`openai.APIConnectionError`）就让它跑到第 42 份时整个崩掉，前 40 份全废。
+    所以：
+      1. 单份最多重试 3 次（指数退避），仍失败则记为 api_error 并继续 ——
+         一次抖动不该让整轮评测作废
+      2. 每份的结果缓存到 out/.cache/geneval/，重跑时直接跳过已完成的部分
+    """
+    cache_dir = ROOT / "out" / ".cache" / "geneval"
+    cache_file = cache_dir / f"{case['id']}.json"
+    if resume and cache_file.exists():
+        try:
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            r = run_case(case, verify)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
+            return r
+        except Exception as e:  # noqa: BLE001 —— 网络/限流等瞬时错误
+            last = e
+            time.sleep(2 ** attempt)
+
+    # 三次都失败：记为 API 错误，继续跑后面的，不中断整轮
+    return {
+        "id": case["id"],
+        "points": [
+            {
+                "keyword": _keywords(p)[0], "keywords": _keywords(p), "rule": p["rule"],
+                "expect": p["expect"], "actual": None, "correct": False,
+                "error": f"API 调用失败（{type(last).__name__}）", "why": p["why"],
+            }
+            for p in case["points"]
+        ],
+        "extra": [],
+        "queries": [],
+        "prompt_tokens": 0, "completion_tokens": 0, "elapsed": 0.0, "tool_calls": 0,
+        "api_error": True,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="生成层端到端评测")
     ap.add_argument("--limit", type=int, default=0, help="只跑前 N 份文档（0=全部）")
     ap.add_argument("--no-verify", action="store_true", help="关闭检索闸门（对照）")
+    ap.add_argument("--no-resume", action="store_true",
+                    help="忽略 out/.cache/geneval 缓存，强制全部重跑")
     args = ap.parse_args()
 
     # 合并多份数据集（手写难例 + 生成集）
@@ -221,10 +273,11 @@ def main() -> int:
 
     results = []
     for i, case in enumerate(cases, 1):
-        r = run_case(case, verify)
+        r = _run_case_cached(case, verify, resume=not args.no_resume)
         results.append(r)
         ok = sum(1 for p in r["points"] if p["correct"])
-        print(f"  [{i:>2}/{len(cases)}] {r['id']}  {ok}/{len(r['points'])} 正确  ({r['elapsed']}s)")
+        flag = "  ⚠️ API 失败" if r.get("api_error") else ""
+        print(f"  [{i:>2}/{len(cases)}] {r['id']}  {ok}/{len(r['points'])} 正确  ({r['elapsed']}s){flag}")
         for p in r["points"]:
             if not p["correct"]:
                 print(f"        ✗ {p['keyword']}: 期望 {p['expect']} → 实际 {p['actual']}  {p['error']}")
