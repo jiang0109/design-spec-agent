@@ -237,6 +237,11 @@ def _grams(s: str, n: int = 3) -> set[str]:
     return {t[i : i + n] for i in range(0, max(0, len(t) - n + 1))}
 
 
+def _ascii_ids(s: str) -> set[str]:
+    """取英文标识符（长度 ≥4），用于识别 Container / Divider / Logo 这类对象名。"""
+    return {t.lower() for t in re.findall(r"[A-Za-z][A-Za-z0-9]{3,}", s or "")}
+
+
 # ======================================================================
 # 例外检测（在引擎判定之前执行）
 #
@@ -249,21 +254,42 @@ def _grams(s: str, n: int = 3) -> set[str]:
 #
 # 判定"这个陈述是否落在例外里"需要语义理解，引擎做不了。
 # 但**粗筛**是可以做的：例外条款里的关键短语通常会在陈述里复现。
-# 用 4-gram 重合度做粗筛，命中就交回 LLM 路径 —— 宁可多交出去，
-# 也不能让引擎在例外案例上给出确定性错误。
+# 命中就交回 LLM 路径 —— 宁可多交出去，也不能在例外案例上给出确定性错误。
+#
+# 两路信号（缺一不可）
+# --------------------
+#   ① 中文 3-gram 重合 ≥2 —— 覆盖中文措辞相近的情况
+#   ② **英文标识符命中** —— 覆盖「例外写 Container / Divider，陈述只写 Divider」这类
+#      中文完全无交集的情况。COMP-001 的 Divider 案例就是栽在这里：
+#      陈述「分割线 Divider」与例外「纯布局容器（Container / Divider）」
+#      中文 3-gram 只重合 1 个（"声明与"），低于阈值 → 漏检 → 判 fail（误报）。
+#
+# ⚠️ ② 必须排除"规则自身通用的词"
+# ------------------------------
+# 不能简单地让所有英文词参与匹配：`size`、`variant` 在例外和正常陈述里都出现。
+# 实测只做①时把拉丁词纳入会产出 2/30 假阳性（「同时声明了 size 与 variant」
+# 被误判为例外）。所以②只认**在规则正文里没出现过的**英文标识符 ——
+# 对 COMP-001 来说 size/variant 在正文里，故被排除；Divider 只在例外里，故保留。
 # ======================================================================
 def exception_match(rule_id: str, statement: str, rules: dict, threshold: int = 2) -> str | None:
     rule = rules.get(rule_id)
     if not rule:
         return None
     sg = _grams(statement)
-    if not sg:
+    sa = _ascii_ids(statement)
+    generic = _ascii_ids(rule.statement)
+    if not sg and not sa:
         return None
     for exc in rule.exceptions:
         e = exc.strip().lstrip("-").strip()
         if not e or e in ("无",):
             continue
-        if len(sg & _grams(e)) >= threshold:
+        # ① 中文 3-gram
+        if sg and len(sg & _grams(e)) >= threshold:
+            return e
+        # ② 英文标识符（排除规则正文里已有的通用词）
+        disc = _ascii_ids(e) - generic
+        if disc and (disc & sa):
             return e
     return None
 
