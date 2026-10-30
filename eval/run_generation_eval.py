@@ -192,6 +192,23 @@ def run_case(case: dict, verify: bool | None) -> dict:
     }
 
 
+def _code_fingerprint() -> str:
+    """kb/ 与 src/ 的内容指纹。
+
+    为什么需要：断点续跑缓存会在**代码或知识库改动后静默复用旧结果**，
+    于是评测数字与当前代码不对应 —— 这是最隐蔽的测量污染，
+    报告里写"94%"但代码已经不是那一版了。指纹不匹配就整体忽略缓存。
+    """
+    import hashlib
+
+    h = hashlib.sha256()
+    for d in ("kb", "src"):
+        for p in sorted((ROOT / d).glob("*.py" if d == "src" else "*.md")):
+            h.update(p.name.encode("utf-8"))
+            h.update(p.read_bytes())
+    return h.hexdigest()[:16]
+
+
 def _run_case_cached(case: dict, verify: bool | None, resume: bool = True) -> dict:
     """带"重试 + 断点续跑"的单份文档评测。
 
@@ -203,8 +220,19 @@ def _run_case_cached(case: dict, verify: bool | None, resume: bool = True) -> di
       1. 单份最多重试 3 次（指数退避），仍失败则记为 api_error 并继续 ——
          一次抖动不该让整轮评测作废
       2. 每份的结果缓存到 out/.cache/geneval/，重跑时直接跳过已完成的部分
+      3. 缓存带代码指纹，kb/src 一改就自动失效（避免用旧结果冒充新结论）
     """
     cache_dir = ROOT / "out" / ".cache" / "geneval"
+    stamp_file = cache_dir / "_fingerprint.txt"
+    stamp = _code_fingerprint()
+
+    if resume and cache_dir.exists():
+        old = stamp_file.read_text(encoding="utf-8").strip() if stamp_file.exists() else ""
+        if old != stamp:
+            print(f"  （代码/KB 已变，缓存失效：{old or '(无)'} → {stamp}）")
+            for f in cache_dir.glob("*.json"):
+                f.unlink(missing_ok=True)
+
     cache_file = cache_dir / f"{case['id']}.json"
     if resume and cache_file.exists():
         try:
@@ -218,6 +246,7 @@ def _run_case_cached(case: dict, verify: bool | None, resume: bool = True) -> di
             r = run_case(case, verify)
             cache_dir.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
+            stamp_file.write_text(stamp, encoding="utf-8")
             return r
         except Exception as e:  # noqa: BLE001 —— 网络/限流等瞬时错误
             last = e

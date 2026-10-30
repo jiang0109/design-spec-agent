@@ -273,6 +273,43 @@ def t_hybrid_routing() -> str:
     return f"{len(OFFLINE)} 条路由+判定断言"
 
 
+def t_exception_recall() -> str:
+    """例外粗筛的召回质量门禁。
+
+    为什么需要它：例外粗筛是双路并行的安全阀 —— 引擎不认识 exceptions，
+    漏检就会把"被规则明确排除"的合规案例判成违规（误报）。
+    实测这一项从 8/10 提到 10/10 的过程中，全量准确率从 94% 升到 96%。
+    所以它必须有回归保护。
+    """
+    from src.rule_engine import RuleEngine
+
+    cases: list[dict] = []
+    for p in (ROOT / "eval" / "generation_set.json",
+              ROOT / "eval" / "generation_set_expanded.json"):
+        if p.exists():
+            cases.extend(json.loads(p.read_text(encoding="utf-8"))["cases"])
+    exc = [c for c in cases if "例外" in c["points"][0].get("rule", "")]
+    assert exc, "评测集里没有排除型用例"
+
+    engine = RuleEngine()
+    misses: list[str] = []
+    for c in exc:
+        rid = c["points"][0]["rule"].split(" ")[0]
+        if not engine.exception_hit(rid, c["doc"]):
+            misses.append(c["id"])
+
+    # 同时守住假阳性：粗筛放宽会误伤正常用例
+    norm = [c for c in cases
+            if "例外" not in c["points"][0].get("rule", "")
+            and not c["points"][0]["rule"].startswith("(无覆盖")]
+    fps = [c["id"] for c in norm
+           if engine.exception_hit(c["points"][0]["rule"].split(" ")[0], c["doc"])]
+
+    assert len(misses) <= 0, f"例外粗筛漏检：{misses}"
+    assert not fps, f"例外粗筛假阳性：{fps[:3]}"
+    return f"命中 {len(exc)}/{len(exc)}｜假阳性 0/{len(norm)}"
+
+
 def main() -> int:
     print("=" * 74)
     print("冒烟测试（离线不变量，零 API 调用）")
@@ -289,6 +326,7 @@ def main() -> int:
     check("9 生成层评测集结构", t_generation_set)
     check("10 规则引擎单元测试", t_rule_engine)
     check("11 混合判定路由", t_hybrid_routing)
+    check("12 例外粗筛召回/假阳性", t_exception_recall)
 
     print()
     print("=" * 74)
