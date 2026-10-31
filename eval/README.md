@@ -1,6 +1,6 @@
 # eval/ 目录索引
 
-本目录有 26 个脚本、13 份实验报告、3 套评测集。这份索引说明**哪个是当前在用的、
+本目录有 26 个脚本、14 份实验报告、3 套评测集。这份索引说明**哪个是当前在用的、
 哪个是历史存档、谁依赖谁** —— 避免把历史脚本当成现行流程。
 
 ---
@@ -144,6 +144,7 @@ eval/baselines/<tag>.json        冻结基线（**提交到 git**，不是临时
 3. eval/hybrid_eval_report.md    双路并行为什么没切默认（口径与取舍）
 4. eval/decidability_report.md   为什么要把判定交给代码（75% 可确定性）
 5. eval/experiments.md           最早那批实验（含排查过程）
+6. eval/graph_migration_report.md  LangGraph 迁移：怎么证明「行为等价」而不是「碰巧分数一样」
 ```
 
 **报告里保留了被推翻的假设**（`structured_report.md` 推翻 `e2e_report.md`、
