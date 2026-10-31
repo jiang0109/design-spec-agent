@@ -198,9 +198,11 @@ def to_agent_report(doc_name: str, rep: HybridReport) -> "AgentReport":
     )
 
 
-def run_hybrid_agent(doc: str, doc_name: str = "document.md") -> "AgentReport":
+def run_hybrid_agent(
+    doc: str, doc_name: str = "document.md", *, agent_runner=None
+) -> "AgentReport":
     """双路并行的端到端入口，返回与 LLM 路径同构的报告。"""
-    return to_agent_report(doc_name, evaluate_document_dual(doc))
+    return to_agent_report(doc_name, evaluate_document_dual(doc, agent_runner=agent_runner))
 
 
 def evaluate_document(doc: str, engine: RuleEngine | None = None) -> HybridReport:
@@ -252,8 +254,19 @@ def evaluate_document_dual(
     doc: str,
     engine: RuleEngine | None = None,
     llm_fallback: bool = True,
+    agent_runner=None,
 ) -> HybridReport:
-    """双路：引擎判定闭集属性，其余交给 LLM 路径。"""
+    """双路：引擎判定闭集属性，其余交给 LLM 路径。
+
+    agent_runner
+        LLM 路径的控制流实现，默认 `src.agent.run_agent`（手写 ReAct 循环）。
+        显式传入 `src.agent_graph.run_agent_graph` 即可用**同一套基线**对比
+        状态图实现 —— 迁移验收靠它。
+
+        为什么用参数注入而不是环境变量/模块全局：项目原有纪律是"不改写模块全局，
+        避免隐藏状态污染"（见 agent.py 里 llm_verify 的处理）。评测脚本若靠
+        环境变量切换实现，两次运行的区别就不在运行记录里了。
+    """
     engine = engine or RuleEngine()
     claims = extract(doc)
     rep = HybridReport(extract_calls=1)
@@ -278,10 +291,11 @@ def evaluate_document_dual(
         return rep
 
     # 只把未知陈述交给 LLM 路径
-    from .agent import run_agent
+    if agent_runner is None:
+        from .agent import run_agent as agent_runner
 
-    ar = run_agent(_mini_doc([c.statement for c in need_llm]),
-                   doc_name="hybrid_fallback", verbose=False)
+    ar = agent_runner(_mini_doc([c.statement for c in need_llm]),
+                      doc_name="hybrid_fallback", verbose=False)
     rep.llm_runs = 1
     issues = list(ar.report.issues)
 

@@ -63,6 +63,24 @@ def _keyed(points: list[dict]) -> dict[tuple, dict]:
     return out
 
 
+def _ratio(rec: dict) -> float:
+    """引擎占比：按判定条数算，不按判定点数算。
+
+    早期版本（含已提交的 pre-langgraph.json）用 `engine / total_points` 作分母，
+    而 sources 统计的是判定条数 —— 分母不同，会算出「117%」这种值。
+    这里一律从 sources 重算，保证新旧基线的该指标可对比。
+    """
+    s = rec["metrics"].get("sources") or {}
+    tot = sum(s.values())
+    return s.get("engine", 0) / tot if tot else 0.0
+
+
+def _metric(rec: dict, key: str):
+    if key == "engine_ratio":
+        return _ratio(rec)
+    return rec["metrics"].get(key)
+
+
 def _fmt(v, kind: str) -> str:
     if v is None:
         return "-"
@@ -100,7 +118,7 @@ def main(argv: list[str]) -> int:
     print(f"{'指标':<14}{'A':>10}{'B':>10}{'差':>10}")
     print("-" * 92)
     for label, key, kind in METRIC_ROWS:
-        va, vb = ma.get(key), mb.get(key)
+        va, vb = _metric(a, key), _metric(b, key)
         if kind == "pct":
             diff = f"{(vb - va) * 100:+.0f}pp" if va is not None and vb is not None else "-"
         else:

@@ -46,7 +46,7 @@
 | `run_eval.py` | 检索层：5 种分块 × 双口径 × 分层指标 | ❌ 纯本地 |
 | `run_hybrid_eval.py` | 生成层端到端（**双路，CLI 默认引擎**，119 点） | ✅ 约 10 分钟 |
 | `run_generation_eval.py` | 生成层端到端（**纯 LLM 路径，对照用**，119 点）。带重试 + 断点续跑 | ✅ 约 14 分钟 |
-| `freeze_baseline.py` | **冻结可复核基线**：逐文件 SHA256 + git + 配置 + 逐点明细。带缓存/续跑 | ✅ 约 6.5 分钟 |
+| `freeze_baseline.py` | **冻结可复核基线**：逐文件 SHA256 + git + 配置 + 逐点明细。带缓存/续跑。`--agent-impl manual\|graph` 可切换 LLM 路径的控制流实现 | ✅ 约 6.5 分钟 |
 | `compare_baselines.py` | 对比两份基线，逐点列改善/回归；有「正确→错误」时退出码 1 | ❌ 纯本地 |
 
 ### 基线（`eval/baselines/`）
@@ -60,6 +60,11 @@
 
 用途是大改（架构迁移、重构）前后的**行为等价性**验收：只看总分不够，总数相同
 可能是 3 个变好 + 3 个变坏互相抵消，所以用 `compare_baselines.py` 逐点 diff。
+
+**控制流迁移的验收方式**：`--agent-impl manual` 与 `--agent-impl graph` 分别产出一份
+基线，再逐点对比。两种实现的 prompt / 工具契约 / 溯源校验来自同一处
+（`agent_graph.py` 从 `agent.py` 导入），所以差异只可能来自**编排**，
+不会和「prompt 被改坏」混在一起。缓存目录也按实现分开，避免两种控制流串味。
 
 > 缓存键包含**度量脚本本身**（`run_hybrid_eval.py` 等）。原因：匹配与错误分类逻辑
 > 在 eval 里，`_code_fingerprint()` 只覆盖 kb/src/评测集 —— 只改匹配口径不会让缓存

@@ -61,8 +61,8 @@ BASELINE = {
 }
 
 
-def run_case(case: dict, engine: RuleEngine, llm: bool) -> dict:
-    rep = evaluate_document_dual(case["doc"], engine, llm_fallback=llm)
+def run_case(case: dict, engine: RuleEngine, llm: bool, agent_runner=None) -> dict:
+    rep = evaluate_document_dual(case["doc"], engine, llm_fallback=llm, agent_runner=agent_runner)
     # 统一成与 LLM 路径相同的 issues 形状，复用同一套匹配
     issues = [
         {

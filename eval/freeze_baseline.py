@@ -112,9 +112,10 @@ def git_info() -> dict:
     }
 
 
-def run_config() -> dict:
+def run_config(agent_impl: str = "manual") -> dict:
     return {
         "engine": "hybrid",
+        "agent_impl": agent_impl,
         "llm_fallback": True,
         "model": model_name(),
         "base_url": os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
@@ -125,7 +126,26 @@ def run_config() -> dict:
 # ----------------------------------------------------------------------
 # 带缓存的单份评测
 # ----------------------------------------------------------------------
-def run_case_cached(case: dict, engine: RuleEngine, cache_dir: Path, stamp: str, resume: bool) -> dict:
+def resolve_agent_runner(impl: str):
+    """LLM 路径的控制流实现。manual = 手写 ReAct 循环；graph = LangGraph 状态图。
+
+    只对比「控制流」：两种实现的 prompt、工具契约、溯源校验都来自同一处
+    （agent_graph 从 agent 导入），所以差异只可能来自编排。
+    """
+    if impl == "graph":
+        from src.agent_graph import run_agent_graph
+
+        return run_agent_graph
+    if impl == "manual":
+        from src.agent import run_agent
+
+        return run_agent
+    raise ValueError(f"未知的 agent 实现：{impl}")
+
+
+def run_case_cached(
+    case: dict, engine: RuleEngine, cache_dir: Path, stamp: str, resume: bool, agent_runner=None
+) -> dict:
     stamp_file = cache_dir / "_fingerprint.txt"
     if resume and cache_dir.exists():
         old = stamp_file.read_text(encoding="utf-8").strip() if stamp_file.exists() else ""
@@ -144,7 +164,7 @@ def run_case_cached(case: dict, engine: RuleEngine, cache_dir: Path, stamp: str,
     last: Exception | None = None
     for attempt in range(3):
         try:
-            r = run_case(case, engine, True)
+            r = run_case(case, engine, True, agent_runner=agent_runner)
             cache_dir.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
             stamp_file.write_text(stamp, encoding="utf-8")
@@ -184,6 +204,11 @@ def summarize(results: list[dict]) -> dict:
         sources["fallback"] += r.get("fallback", 0)
 
     api_errors = [r["id"] for r in results if r.get("api_error")]
+    # 分母必须是「判定条数」，不是「判定点总数」。
+    # 踩过的坑（继承自 run_hybrid_eval.py）：那边写的是 sources["engine"] / total(点数)，
+    # 而 sources 统计的是**判定条数** —— 两个分母不同，于是出现「引擎占比 117%」。
+    # 这里显式用判定条数做分母，并把分母单独记下来。
+    judgments = sum(sources.values())
     return {
         "total_points": total,
         "covered": len(matched),
@@ -197,7 +222,8 @@ def summarize(results: list[dict]) -> dict:
         "unmatched": sum(1 for p in pts if p["actual"] is None),
         "verdict_mismatch": cnt("判定不符"),
         "sources": sources,
-        "engine_ratio": round(sources["engine"] / total, 4) if total else 0.0,
+        "judgments": judgments,
+        "engine_ratio": round(sources["engine"] / judgments, 4) if judgments else 0.0,
         "api_error_docs": api_errors,
     }
 
@@ -225,6 +251,12 @@ def main() -> int:
     ap.add_argument("--tag", default="pre-langgraph", help="基线名称，决定输出文件名")
     ap.add_argument("--limit", type=int, default=0, help="只跑前 N 份文档（验管道用）")
     ap.add_argument("--no-resume", action="store_true", help="忽略缓存，全部重跑")
+    ap.add_argument(
+        "--agent-impl",
+        choices=["manual", "graph"],
+        default="manual",
+        help="LLM 路径的控制流实现：manual=手写 ReAct 循环（现行），graph=LangGraph 状态图",
+    )
     ap.add_argument("--out-dir", default="eval/baselines")
     args = ap.parse_args()
 
@@ -238,11 +270,12 @@ def main() -> int:
     inputs = collect_inputs()
     aggregate = _code_fingerprint()
     stamp = cache_stamp(inputs)
+    agent_runner = resolve_agent_runner(args.agent_impl)
     engine = RuleEngine()
     k, n = engine.coverage()
 
     print("=" * 92)
-    print(f"冻结基线｜tag={args.tag}｜文档 {len(cases)} 份")
+    print(f"冻结基线｜tag={args.tag}｜文档 {len(cases)} 份｜LLM 路径={args.agent_impl}")
     print("=" * 92)
     print(f"  缓存键（含度量脚本）: {stamp}")
     print(f"  代码/KB 指纹        : {aggregate}")
@@ -251,11 +284,12 @@ def main() -> int:
     print(f"  模型            : {model_name()}")
     print()
 
-    cache_dir = ROOT / "out" / ".cache" / "baseline"
+    # 缓存目录按实现分开：两种控制流共用一份缓存会让结果串味
+    cache_dir = ROOT / "out" / ".cache" / f"baseline-{args.agent_impl}"
     started = time.perf_counter()
     results = []
     for i, case in enumerate(cases, 1):
-        r = run_case_cached(case, engine, cache_dir, stamp, not args.no_resume)
+        r = run_case_cached(case, engine, cache_dir, stamp, not args.no_resume, agent_runner=agent_runner)
         results.append(r)
         ok = sum(1 for p in r["points"] if p["correct"])
         if ok != len(r["points"]) or i % 20 == 0:
@@ -301,7 +335,7 @@ def main() -> int:
         "created_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "purpose": "迁移前后回归比对的基准；只允许用同一脚本、同一输入重跑",
         "git": git_info(),
-        "config": run_config(),
+        "config": run_config(args.agent_impl),
         "fingerprint": {"cache_stamp": stamp, "aggregate": aggregate, "inputs": inputs},
         "dataset": {
             "documents": len(cases),
