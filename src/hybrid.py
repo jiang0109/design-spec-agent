@@ -37,7 +37,55 @@ class Judgment:
     field_name: str = ""
     expected: str = ""
     actual: str = ""
-    evidence: bool = False  # LLM 路径是否引用了规范原文
+    evidence: bool = False      # LLM 路径是否引用了规范原文
+    evidence_text: str = ""     # 规则原文（引擎路径可直接给出，可溯源）
+    suggestion: str = ""        # 可执行的修改建议
+
+
+# 字段名的中文标签：建议文案里不该出现 `allowed`、`required_pattern` 这类内部字段名。
+_FIELD_LABEL = {
+    "allowed": "取值",
+    "step": "取值粒度",
+    "min": "下限",
+    "min_touch_target": "最小可点击高度",
+    "max": "上限",
+    "max_content_width": "最大宽度",
+    "range": "取值范围",
+    "multiplier": "行高倍数",
+    "constraint": "间距关系",
+    "pattern": "命名格式",
+    "required": "必填属性",
+    "defaults": "默认值",
+    "default": "默认值",
+    "required_pattern": "颜色引用方式",
+    "forbidden_pattern": "颜色引用方式",
+}
+
+
+def _enrich(rule, res) -> tuple[str, str]:
+    """给引擎判定补上「规范原文」与「修改建议」。
+
+    为什么必须补：README 承诺输出「结构化报告 + 引用出处 + 修改建议」，
+    而规则引擎的原始输出只有 field/expected/actual。直接切默认会让报告失去
+    这两个字段 —— 判定更准了，但产物更差，等于用可复现性换了可用性。
+
+    好在这两件事都能**确定性生成**，不需要再调模型：
+      引用出处 = 规则原文（引擎本来就加载了 rule.statement）
+      修改建议 = 由 field / expected 拼模板，字段名转成中文标签
+    """
+    if rule is None:
+        return "", ""
+    evidence_text = (rule.statement or "").strip()[:260]
+    if res.verdict != "fail":
+        return evidence_text, ""
+    label = _FIELD_LABEL.get(res.field_name, res.field_name or "取值")
+    actual = res.actual if res.actual else "未给出"
+    sug = f"{label}应为 {res.expected}，当前为 {actual}。"
+    if rule.exceptions:
+        exc = "；".join(e.strip() for e in rule.exceptions[:2] if e.strip() and e.strip() != "无")
+        if exc:
+            sug += f"（例外：{exc}）"
+    return evidence_text, sug
 
 
 @dataclass
@@ -100,8 +148,59 @@ def judge_claim(claim, engine: RuleEngine) -> Judgment:
         # 结构性失败：claim 形状与规则约束不匹配（抽取没给全字段）
         return Judgment(claim.statement, claim.attribute, rule_id, "uncertain",
                         f"{note}；但 {r.detail}", "fallback")
+    ev_text, sug = _enrich(engine.rules.get(rule_id), r)
     return Judgment(claim.statement, claim.attribute, rule_id, r.verdict, r.detail,
-                    "engine", r.field_name, r.expected, r.actual)
+                    "engine", r.field_name, r.expected, r.actual,
+                    evidence=bool(ev_text), evidence_text=ev_text, suggestion=sug)
+
+
+def to_agent_report(doc_name: str, rep: HybridReport) -> "AgentReport":
+    """把 HybridReport 适配成与 LLM 路径相同的 AgentReport，供 CLI/下游复用。
+
+    为什么要适配而不是新造一种输出：两条路径的报告格式必须一致，
+    否则每换一次引擎，下游（CLI 渲染、评测匹配、未来前端）都要改。
+    """
+    from .schemas import AgentReport, Issue, SpecReport
+
+    c = rep.counts()
+    # 同一句陈述可能命中多条规则（例如「variant 未设默认值」同时违反
+    # COMP-001 必填声明与 COMP-004 默认值要求）。这时如果不加标识，
+    # 报告里会出现两行完全相同的 target，看起来像重复输出。
+    seen: dict[str, int] = {}
+    for j in rep.judgments:
+        seen[j.statement] = seen.get(j.statement, 0) + 1
+
+    issues = []
+    for j in rep.judgments:
+        base = (j.statement or j.attribute or "未命名项")[:40]
+        target = f"{base} ｜{j.rule_id}" if seen.get(j.statement, 0) > 1 and j.rule_id else base
+        issues.append(
+            Issue(
+                target=target,
+                verdict=j.verdict if j.verdict in ("pass", "fail", "uncertain") else "uncertain",
+                reason=j.detail,
+                evidence=j.evidence_text,
+                suggestion=j.suggestion,
+            )
+        )
+    sections = sorted({j.rule_id for j in rep.judgments if j.rule_id})
+    summary = (
+        f"共判定 {rep.total} 项：{c.get('pass', 0)} 项合规、{c.get('fail', 0)} 项不合规、"
+        f"{c.get('uncertain', 0)} 项无依据。"
+        f"其中 {rep.by_engine} 项由规则引擎确定性判定，"
+        f"{rep.by_llm + rep.fallback} 项走语义路径。"
+    )
+    return AgentReport(
+        doc=doc_name,
+        report=SpecReport(summary=summary, issues=issues, evidence_sections=sections),
+        steps=rep.extract_calls,
+        tool_calls=rep.llm_runs,
+    )
+
+
+def run_hybrid_agent(doc: str, doc_name: str = "document.md") -> "AgentReport":
+    """双路并行的端到端入口，返回与 LLM 路径同构的报告。"""
+    return to_agent_report(doc_name, evaluate_document_dual(doc))
 
 
 def evaluate_document(doc: str, engine: RuleEngine | None = None) -> HybridReport:

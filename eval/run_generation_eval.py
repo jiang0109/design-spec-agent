@@ -193,19 +193,24 @@ def run_case(case: dict, verify: bool | None) -> dict:
 
 
 def _code_fingerprint() -> str:
-    """kb/ 与 src/ 的内容指纹。
+    """kb/ + src/ + 评测集的联合指纹。
 
-    为什么需要：断点续跑缓存会在**代码或知识库改动后静默复用旧结果**，
-    于是评测数字与当前代码不对应 —— 这是最隐蔽的测量污染，
-    报告里写"94%"但代码已经不是那一版了。指纹不匹配就整体忽略缓存。
+    为什么需要：断点续跑缓存会在**代码、知识库或评测标注改动后静默复用旧结果**，
+    于是评测数字与当前代码/标注不对应 —— 这是最隐蔽的测量污染。
+    指纹不匹配就整体忽略缓存。
+
+    评测集也必须纳入：改动一个判定点的标注，缓存里的旧结果就不再对应新标注。
     """
     import hashlib
 
     h = hashlib.sha256()
-    for d in ("kb", "src"):
-        for p in sorted((ROOT / d).glob("*.py" if d == "src" else "*.md")):
-            h.update(p.name.encode("utf-8"))
-            h.update(p.read_bytes())
+    targets: list[Path] = []
+    targets += sorted((ROOT / "kb").glob("*.md"))
+    targets += sorted((ROOT / "src").glob("*.py"))
+    targets += sorted((ROOT / "eval").glob("generation_set*.json"))
+    for p in targets:
+        h.update(p.name.encode("utf-8"))
+        h.update(p.read_bytes())
     return h.hexdigest()[:16]
 
 
@@ -295,7 +300,10 @@ def main() -> int:
 
     n_points = sum(len(c["points"]) for c in cases)
     verify = False if args.no_verify else None
-    mode = "闸门关闭（纯 BM25）" if args.no_verify else "默认（闸门开启）"
+    # 注意：本脚本测的是**纯 LLM 路径**（run_agent）。
+    # CLI 的默认引擎已改为 hybrid，两条路径的指标要分开看 ——
+    # 见 eval/hybrid_eval_report.md 的对照表。
+    mode = "纯 LLM 路径（闸门关闭）" if args.no_verify else "纯 LLM 路径（闸门开启）"
 
     print(f"生成层端到端评测｜模式：{mode}")
     print(f"文档 {len(cases)} 份｜判定点 {n_points} 个\n")

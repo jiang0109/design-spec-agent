@@ -49,6 +49,15 @@ def main() -> int:
         help="对照实验用：使用修复前的宽松溯源表述（默认使用加严版本）",
     )
     parser.add_argument("--ping", action="store_true", help="只测试 API 连通性后退出")
+    parser.add_argument(
+        "--engine",
+        choices=["hybrid", "llm"],
+        default="hybrid",
+        help=(
+            "判定引擎。hybrid（默认）= 抽取→属性路由→规则引擎，未知/例外回落 LLM，"
+            "判定更可复现；llm = 纯 LLM 路径（手写 ReAct 循环 + 相关性闸门）"
+        ),
+    )
     args = parser.parse_args()
 
     if args.ping:
@@ -77,14 +86,19 @@ def main() -> int:
     print("-" * 56)
 
     try:
-        ar = run_agent(
-            doc_text,
-            doc_name=doc_path.name,
-            max_steps=args.max_steps,
-            max_tool_calls=args.tool_calls,
-            loose_instruction=args.loose_prompt,
-            verbose=args.verbose,
-        )
+        if args.engine == "hybrid":
+            from src.hybrid import run_hybrid_agent
+
+            ar = run_hybrid_agent(doc_text, doc_name=doc_path.name)
+        else:
+            ar = run_agent(
+                doc_text,
+                doc_name=doc_path.name,
+                max_steps=args.max_steps,
+                max_tool_calls=args.tool_calls,
+                loose_instruction=args.loose_prompt,
+                verbose=args.verbose,
+            )
     except Exception as e:  # noqa: BLE001
         print(f"\n运行失败：{type(e).__name__}: {e}", file=sys.stderr)
         return 1

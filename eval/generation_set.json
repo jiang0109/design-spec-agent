@@ -285,20 +285,12 @@
       "points": [
         {
           "keywords": [
-            "variant",
-            "变体"
-          ],
-          "rule": "COMP-004",
-          "expect": "pass",
-          "why": "variant 默认值 primary 符合规范要求"
-        },
-        {
-          "keywords": [
-            "size"
+            "size",
+            "属性默认值"
           ],
           "rule": "COMP-004",
           "expect": "fail",
-          "why": "size 与 variant 都必须有默认值，此处缺 size 的默认值"
+          "why": "COMP-004 要求 size 与 variant 都必须有默认值；此处缺 size 的默认值，故文档级结论为 fail。原先拆成两点（variant→pass / size→fail）与 E053 同语义不同标注，已按规则语义对齐为单点：『variant 默认值正确』是子观察，不是独立合规点。"
         }
       ]
     },
